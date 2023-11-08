@@ -1,0 +1,10 @@
+[package]
+name = "perm-mem"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lalrpop-util = { path = "lalrpop/lalrpop-util", features = ["lexer"] }
+
+[build-dependencies]
+lalrpop = { path = "lalrpop/lalrpop" }

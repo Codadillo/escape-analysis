@@ -1,0 +1,37 @@
+use crate::ast::*;
+
+grammar;
+
+List<T, S>: Vec<T> = {
+    <mut v:(<T> S)*> <e:T?> => match e {
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};
+
+ListTerminated<T, S>: Vec<T> = {
+    <(<T> S)*> => <>
+};
+
+pub Function: Function = "fn" <name:Ident> "(" <args:List<Ident, ",">> ")" <body:Block> => Function {<>};
+
+Expr: Expr = {
+    "(" <Expr> ")",
+    Ident => Expr::Ident(<>),
+    Call => Expr::Call(<>),
+    Block => Expr::Block(Box::new(<>)),
+    IfElse => Expr::IfElse(Box::new(<>)),
+}
+
+Ident: Ident = <r"[_a-zA-Z][_'a-zA-Z0-9]*"> => Ident(<>.into());
+
+Call: Call = <ident:Ident> "(" <args:List<Expr, ",">> ")" => Call {<>};
+
+Block: Block = "{" <stmnts:ListTerminated<Statement, ";">> <ret:Expr> "}" => Block {<>};
+
+IfElse: IfElse = "if" <cond:Expr> <iff:Block> "else" <elsee:Block> => IfElse {<>};
+
+Statement: Statement = "let" <ident:Ident> "=" <value:Expr> => Statement {<>};
