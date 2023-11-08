@@ -30,7 +30,6 @@ impl fmt::Debug for BasicBlock {
             write!(f, "\t")?;
             match stmnt {
                 Statement::Assign(a) => write!(f, "let _{} = {:?}", a.place, a.value)?,
-                Statement::Dead(p) => write!(f, "Dead({p})")?,
             }
             writeln!(f, ";")?;
         }

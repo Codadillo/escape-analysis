@@ -62,7 +62,6 @@ impl<T: Clone> DepGraph<T> {
                         }
                     },
                 ),
-                Statement::Dead(_) => continue,
             };
 
             base_deps[p] = Some(deps);

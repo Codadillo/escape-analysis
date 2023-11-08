@@ -24,7 +24,6 @@ pub struct BasicBlock {
 #[derive(Clone)]
 pub enum Statement {
     Assign(Assign),
-    Dead(usize),
 }
 
 #[derive(Clone)]

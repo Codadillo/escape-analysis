@@ -42,7 +42,6 @@ impl LVABlock {
 
                     this.def.insert(assign.place);
                 }
-                _ => {}
             };
         }
 
@@ -118,7 +117,6 @@ impl LVA {
                             };
                         }
                     }
-                    Statement::Dead(_) => continue,
                 };
 
                 plva.insert((i, j as isize), living.clone());
