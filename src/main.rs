@@ -5,11 +5,11 @@ use perm_mem::{
         analysis::lra::{Perm, LRA},
         Cfg,
     },
-    parser,
+    parser, annotate,
 };
 
 fn main() {
-    let input = fs::read_to_string("test.rs").unwrap();
+    let input = fs::read_to_string("testsimple.rs").unwrap();
 
     let parser = parser::FunctionParser::new();
     let ast = match parser.parse(&input) {
@@ -33,12 +33,18 @@ fn main() {
         println!("{p:?} <@ {lv:?}");
     }
 
-    let mut plra: Vec<_> = lra.plra.into_iter().collect();
+    let mut plra: Vec<_> = lra.plra.iter().collect();
     plra.sort_by_key(|(i, _)| *i);
     for (p, lr) in plra {
         println!("{p:?} <@ {lr:?}");
     }
 
     println!("------------CFG----------------");
-    println!("{cfg:#?}");
+    println!("{cfg:?}");
+
+    // println!("-----------ACFG----------------");
+    // let mut acfg = annotate::Cfg::from_base(&cfg);
+    // acfg.annotate_lra(&lra);
+
+    // println!("{acfg:?}");
 }

@@ -1,3 +1,3 @@
 fn my_function(a, b) {
-    func(a, a)
+    func(a, b, b)
 }
