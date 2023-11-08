@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::ast;
 
+pub mod from_cfg;
+
 #[derive(Clone)]
 pub struct Cfg {
     pub arg_count: usize,
@@ -16,27 +18,34 @@ pub struct BasicBlock {
     pub terminator: Option<Terminator>,
 }
 
-#[derive(Clone)]
-pub enum Statement {
-    Assign(Assign),
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+pub enum PlaceValue {
+    Move(usize),
+    Ref(usize),
 }
 
 #[derive(Clone)]
 pub struct Phi {
     pub place: usize,
-    pub opts: HashMap<usize, usize>,
+    pub opts: HashMap<usize, PlaceValue>,
 }
 
 #[derive(Clone)]
-pub struct Assign {
+pub struct Statement {
     pub place: usize,
     pub value: Value,
 }
 
 #[derive(Clone)]
 pub enum Value {
-    Place(usize),
-    Call { func: ast::Ident, args: Vec<usize> },
+    Place(PlaceValue),
+    Call(Call),
+}
+
+#[derive(Clone)]
+pub struct Call {
+    pub func: ast::Ident,
+    pub args: Vec<PlaceValue>,
 }
 
 #[derive(Clone)]
@@ -44,7 +53,7 @@ pub enum Terminator {
     Goto(usize),
     Return,
     IfElse {
-        cond: usize,
+        cond: PlaceValue,
         iff: usize,
         elsee: usize,
     },
