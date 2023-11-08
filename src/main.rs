@@ -5,7 +5,7 @@ use perm_mem::{
         analysis::lra::{Perm, LRA},
         Cfg,
     },
-    parser, annotate,
+    parser,
 };
 
 fn main() {
@@ -41,10 +41,4 @@ fn main() {
 
     println!("------------CFG----------------");
     println!("{cfg:?}");
-
-    // println!("-----------ACFG----------------");
-    // let mut acfg = annotate::Cfg::from_base(&cfg);
-    // acfg.annotate_lra(&lra);
-
-    // println!("{acfg:?}");
 }

@@ -23,8 +23,8 @@ impl ConversionState {
         }
 
         let ret = this.add_block(func.body);
-        this.add_assign(0, Value::Place(ret));
-        this.set_terminator(Terminator::Return);
+        // this.add_assign(0, Value::Place(ret));
+        this.set_terminator(Terminator::Return(ret));
 
         this.cfg
     }

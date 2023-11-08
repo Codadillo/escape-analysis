@@ -62,7 +62,7 @@ impl fmt::Debug for Terminator {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Goto(bb) => write!(f, "goto -> {bb}"),
-            Self::Return => write!(f, "return _0"),
+            Self::Return(p) => write!(f, "return _{p}"),
             Self::IfElse { cond, iff, elsee } => {
                 write!(f, "goto -> if _{cond} {{ {iff} }} else {{ {elsee} }}")
             }

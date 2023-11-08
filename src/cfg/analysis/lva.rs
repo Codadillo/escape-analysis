@@ -82,8 +82,8 @@ impl LVA {
         fixed_point(&mut blocks, |blocks, _old| {
             for i in 0..blocks.len() {
                 let mut live_out = blocks[i].phi_out.clone();
-                if let Some(Terminator::Return) = &cfg.basic_blocks[i].terminator {
-                    live_out.insert(0);
+                if let Some(Terminator::Return(p)) = &cfg.basic_blocks[i].terminator {
+                    live_out.insert(*p);
                 }
                 live_out.extend(cfg.successors(i).iter().flat_map(|&b| &blocks[b].live_in));
 

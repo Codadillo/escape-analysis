@@ -47,7 +47,7 @@ pub enum Value {
 #[derive(Clone)]
 pub enum Terminator {
     Goto(usize),
-    Return,
+    Return(usize),
     IfElse {
         cond: usize,
         iff: usize,
