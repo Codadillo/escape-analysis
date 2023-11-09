@@ -1,8 +1,8 @@
-use std::fs;
+use std::{fs, collections::HashMap};
 
 use perm_mem::{
     cfg::{
-        analysis::lra::{Perm, LRA},
+        analysis::{lra::{Perm, LRA}, context::Context},
         Cfg,
     },
     parser,
@@ -17,8 +17,16 @@ fn main() {
         Err(e) => panic!("{e}"),
     };
 
+    let mut ctx = Context {
+        function_sigs: HashMap::new(),
+    };
+    ctx.insert_any("function1".into(), 1, Perm::Shared);
+    ctx.insert_any("function2".into(), 2, Perm::Shared);
+    ctx.insert_any("function3".into(),3, Perm::Shared);
+
     let cfg = Cfg::from_ast(ast);
     let lra = LRA::analyze(
+        &mut ctx,
         &cfg,
         (1..=cfg.arg_count).map(|p| (p, Perm::Exclusive)).collect(),
     );

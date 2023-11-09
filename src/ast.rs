@@ -40,3 +40,9 @@ pub struct Call {
     pub ident: Ident,
     pub args: Vec<Expr>,
 }
+
+impl<S: Into<String>> From<S> for Ident {
+    fn from(value: S) -> Self {
+        Ident(value.into())
+    }
+}

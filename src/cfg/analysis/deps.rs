@@ -1,4 +1,6 @@
-use crate::cfg::{Cfg, Statement, Value};
+use crate::{cfg::{Cfg, Statement, Value}, ast::Ident};
+
+use super::{context::Context, signature::ArgLives};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepGraph<T> {
@@ -8,7 +10,7 @@ pub struct DepGraph<T> {
 }
 
 impl<T> DepGraph<T> {
-    fn leaf(place: usize) -> Self {
+    pub fn leaf(place: usize) -> Self {
         Self {
             place,
             weight: None,
@@ -21,6 +23,7 @@ impl<T> DepGraph<T> {
 pub enum Deps<T> {
     All(Vec<DepGraph<T>>),
     Xor(Vec<DepGraph<T>>),
+    Func(Ident, Vec<DepGraph<T>>),
 }
 
 impl<T: Clone> DepGraph<T> {
@@ -57,7 +60,7 @@ impl<T: Clone> DepGraph<T> {
                     a.place,
                     match &a.value {
                         Value::Place(d) => Deps::All(vec![DepGraph::leaf(*d)]),
-                        Value::Call { args, .. } => {
+                        Value::Call { func, args, } => {
                             Deps::All(args.iter().copied().map(DepGraph::leaf).collect())
                         }
                     },
@@ -78,21 +81,24 @@ impl<T: Clone> DepGraph<T> {
             .collect()
     }
 
-    pub fn flatten_to_ctrs(&self, cfg: &Cfg) -> Vec<usize> {
+    pub fn flatten_to_ctrs(&self, ctx: &mut Context, cfg: &Cfg) -> Vec<usize> {
         let mut out = vec![0; cfg.place_count];
 
         match &self.deps {
             Some(Deps::All(deps)) => {
                 for dep in deps {
-                    add_ctrs(&mut out, &dep.flatten_to_ctrs(cfg));
+                    add_ctrs(&mut out, &dep.flatten_to_ctrs(ctx, cfg));
                 }
             }
             Some(Deps::Xor(deps)) => {
                 for dep in deps {
-                    for (fdep, out_dep) in dep.flatten_to_ctrs(cfg).into_iter().zip(&mut out) {
+                    for (fdep, out_dep) in dep.flatten_to_ctrs(ctx, cfg).into_iter().zip(&mut out) {
                         *out_dep = fdep.max(*out_dep);
                     }
                 }
+            }
+            Some(Deps::Func(name, deps)) => {
+                ctx.get_sig(name, ArgLives::new(perms))
             }
             None => {}
         }
@@ -101,7 +107,7 @@ impl<T: Clone> DepGraph<T> {
         out
     }
 
-    pub fn meld(&mut self, reference: &Vec<Option<Deps<T>>>) {
+    fn meld(&mut self, reference: &Vec<Option<Deps<T>>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
                 dep.deps = reference[dep.place].clone();

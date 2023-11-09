@@ -8,12 +8,13 @@ use crate::cfg::{
     Cfg,
 };
 
-use super::{deps::Deps, lva::LVA};
+use super::{deps::Deps, lva::LVA, context::Context};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Perm {
     Exclusive,
     Shared,
+    // Dynamic,
 }
 
 impl Debug for Perm {
@@ -21,6 +22,7 @@ impl Debug for Perm {
         match self {
             Perm::Exclusive => write!(f, "X"),
             Perm::Shared => write!(f, "S"),
+            // Perm::Dynamic => write!(f, "D"),
         }
     }
 }
@@ -35,13 +37,13 @@ pub struct LRA {
 }
 
 impl LRA {
-    pub fn analyze(cfg: &Cfg, monomorph: HashMap<usize, Perm>) -> Self {
+    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: HashMap<usize, Perm>) -> Self {
         assert_eq!(monomorph.len(), cfg.arg_count);
 
         let lva = LVA::analyze(cfg);
         let plva = lva.point_lva(cfg);
 
-        let mut graphs = DepGraph::<Perm>::analyze(cfg);
+        let mut graphs = DepGraph::<Perm>::analyze(ctx, cfg);
         let ctrs: Vec<Vec<_>> = graphs.iter().map(|g| g.flatten_to_ctrs(cfg)).collect();
 
         let mut plra = HashMap::new();

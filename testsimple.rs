@@ -1,10 +1,10 @@
 fn my_function(a, b, c) {
     let hello = if a {                  
-        function(c)              
+        function1(c)              
     } else {
-        function(c)  
+        function1(c)  
     };
 
 
-    function(a, hello)   
+    function2(a, hello)   
 }
