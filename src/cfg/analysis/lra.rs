@@ -1,14 +1,17 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
 };
 
 use crate::cfg::{
-    analysis::deps::{add_ctrs, DepGraph},
+    analysis::{
+        deps::{add_ctrs, DepGraph},
+        signature::ArgLives,
+    },
     Cfg,
 };
 
-use super::{deps::Deps, lva::LVA, context::Context};
+use super::{context::Context, deps::Deps, lva::LVA};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Perm {
@@ -43,23 +46,55 @@ impl LRA {
         let lva = LVA::analyze(cfg);
         let plva = lva.point_lva(cfg);
 
-        let mut graphs = DepGraph::<Perm>::analyze(ctx, cfg);
-        let ctrs: Vec<Vec<_>> = graphs.iter().map(|g| g.flatten_to_ctrs(cfg)).collect();
+        let bb_order = cfg.bb_order();
+        let mut sorted_plva: Vec<_> = plva.iter().collect();
+        sorted_plva
+            .sort_by_cached_key(|((b, s), _)| (bb_order.iter().find(|&a| a == b).unwrap(), s));
+
+        let mut graphs = DepGraph::<Perm>::analyze(cfg);
 
         let mut plra = HashMap::new();
 
-        for (p, live) in &plva {
+        let mut pred_perms = monomorph.clone();
+        for (p, live) in sorted_plva {
             if p.1 < 0 {
+                // TODO
                 continue;
             }
 
-            let live_ctrs =
-                live.iter()
-                    .map(|&l| &ctrs[l])
-                    .fold(vec![0; cfg.place_count], |mut acc, ctr| {
-                        add_ctrs(&mut acc, ctr);
-                        acc
-                    });
+            for &lv in live {
+                match &graphs[lv].deps {
+                    Some(Deps::Func(name, args)) => {
+                        let mut arg_perms = BTreeMap::new();
+                        let mut rename_map = HashMap::new();
+                        for (i, arg) in args.iter().enumerate() {
+                            arg_perms.insert(i + 1, pred_perms[&arg.place]);
+                            rename_map.insert(i + 1, arg.place);
+                        }
+
+                        let sig = ctx.get_sig(name, &ArgLives::new(arg_perms)).unwrap();
+
+                        assert_eq!(sig.new_lives, HashSet::from_iter([sig.graph.place]));
+                        rename_map.insert(sig.graph.place, graphs[lv].place);
+
+                        graphs[lv] = sig.graph.clone().rename(&rename_map);
+                    }
+                    _ => {}
+                }
+            }
+
+            let reference = graphs.clone();
+            for graph in &mut graphs {
+                graph.meld(&reference);
+            }
+
+            let live_ctrs = live.iter().map(|&l| graphs[l].flatten_to_ctrs(cfg)).fold(
+                vec![0; cfg.place_count],
+                |mut acc, ctr| {
+                    add_ctrs(&mut acc, &ctr);
+                    acc
+                },
+            );
 
             let base_perms: Vec<_> = live_ctrs
                 .into_iter()
@@ -77,7 +112,8 @@ impl LRA {
 
             let mut live_refs = HashMap::new();
             for &lv in live {
-                populate_perms(&mut graphs[lv], None, &base_perms, &mut live_refs);
+                populate_perms(ctx, &mut graphs[lv], None, &base_perms, &mut live_refs);
+                pred_perms.insert(lv, graphs[lv].weight.unwrap());
             }
 
             plra.insert(*p, live_refs);
@@ -93,6 +129,7 @@ impl LRA {
 }
 
 fn populate_perms(
+    ctx: &Context,
     graph: &mut DepGraph<Perm>,
     parent: Option<Perm>,
     base_perms: &Vec<Option<Perm>>,
@@ -112,9 +149,17 @@ fn populate_perms(
         out_perms.insert(graph.place, graph.weight.unwrap());
     }
 
-    if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut graph.deps {
-        for dep in deps {
-            populate_perms(dep, graph.weight, base_perms, out_perms);
+    match &mut graph.deps {
+        Some(Deps::All(deps) | Deps::Xor(deps)) => {
+            for dep in deps {
+                populate_perms(ctx, dep, graph.weight, base_perms, out_perms);
+            }
         }
+        Some(Deps::Func(name, _)) => panic!(
+            "Unexpected Deps::Func while populating: _{} > {name:?}(..)",
+            graph.place
+        ),
+
+        None => {}
     }
 }

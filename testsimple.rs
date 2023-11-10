@@ -1,10 +1,11 @@
 fn my_function(a, b, c) {
-    let hello = if a {                  
+    let input = function1(a);
+
+    let hello = if input {           
         function1(c)              
     } else {
         function1(c)  
     };
 
-
-    function2(a, hello)   
+    function3(input, input, hello)   
 }

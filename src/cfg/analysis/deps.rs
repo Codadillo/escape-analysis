@@ -1,12 +1,22 @@
-use crate::{cfg::{Cfg, Statement, Value}, ast::Ident};
+use std::collections::HashMap;
 
-use super::{context::Context, signature::ArgLives};
+use crate::{
+    ast::Ident,
+    cfg::{Cfg, Statement, Value},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DepGraph<T> {
     pub place: usize,
     pub weight: Option<T>,
     pub deps: Option<Deps<T>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Deps<T> {
+    All(Vec<DepGraph<T>>),
+    Xor(Vec<DepGraph<T>>),
+    Func(Ident, Vec<DepGraph<T>>),
 }
 
 impl<T> DepGraph<T> {
@@ -17,41 +27,45 @@ impl<T> DepGraph<T> {
             deps: None,
         }
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Deps<T> {
-    All(Vec<DepGraph<T>>),
-    Xor(Vec<DepGraph<T>>),
-    Func(Ident, Vec<DepGraph<T>>),
+    pub fn rename(self, map: &HashMap<usize, usize>) -> Self {
+        Self {
+            place: map[&self.place],
+            weight: self.weight,
+            deps: self.deps.map(|deps| match deps {
+                Deps::All(ds) => Deps::All(ds.into_iter().map(|d| d.rename(map)).collect()),
+                Deps::Xor(ds) => Deps::Xor(ds.into_iter().map(|d| d.rename(map)).collect()),
+                Deps::Func(name, ds) => {
+                    Deps::Func(name, ds.into_iter().map(|d| d.rename(map)).collect())
+                }
+            }),
+        }
+    }
 }
 
 impl<T: Clone> DepGraph<T> {
     pub fn analyze(cfg: &Cfg) -> Vec<Self> {
-        let base_deps = Self::base_deps(cfg);
+        let mut base_deps = Self::base_deps(cfg);
+        let reference = base_deps.clone();
+
+        for graph in &mut base_deps {
+            graph.meld(&reference);
+        }
 
         base_deps
-            .iter()
-            .enumerate()
-            .map(|(place, deps)| {
-                let mut graph = Self {
-                    place,
-                    weight: None,
-                    deps: deps.clone(),
-                };
-                graph.meld(&base_deps);
-                graph
-            })
-            .collect()
     }
 
-    pub fn base_deps(cfg: &Cfg) -> Vec<Option<Deps<T>>> {
-        let mut base_deps: Vec<_> = vec![None; cfg.place_count];
+    pub fn base_deps(cfg: &Cfg) -> Vec<DepGraph<T>> {
+        let mut base_deps: Vec<_> = (0..cfg.place_count).map(DepGraph::leaf).collect();
 
         for phi in cfg.basic_blocks.iter().flat_map(|b| &b.phi) {
-            base_deps[phi.place] = Some(Deps::Xor(
-                phi.opts.values().map(|&v| DepGraph::leaf(v)).collect(),
-            ));
+            base_deps[phi.place] = DepGraph {
+                place: phi.place,
+                weight: None,
+                deps: Some(Deps::Xor(
+                    phi.opts.values().map(|&v| DepGraph::leaf(v)).collect(),
+                )),
+            };
         }
 
         for stmnt in cfg.statements() {
@@ -60,14 +74,22 @@ impl<T: Clone> DepGraph<T> {
                     a.place,
                     match &a.value {
                         Value::Place(d) => Deps::All(vec![DepGraph::leaf(*d)]),
-                        Value::Call { func, args, } => {
-                            Deps::All(args.iter().copied().map(DepGraph::leaf).collect())
+                        Value::Call { func, args } => {
+                            Deps::Func(
+                                func.clone(),
+                                args.iter().copied().map(DepGraph::leaf).collect(),
+                            )
+                            // Deps::All(args.iter().copied().map(DepGraph::leaf).collect())
                         }
                     },
                 ),
             };
 
-            base_deps[p] = Some(deps);
+            base_deps[p] = DepGraph {
+                place: p,
+                weight: None,
+                deps: Some(deps),
+            };
         }
 
         base_deps
@@ -81,25 +103,26 @@ impl<T: Clone> DepGraph<T> {
             .collect()
     }
 
-    pub fn flatten_to_ctrs(&self, ctx: &mut Context, cfg: &Cfg) -> Vec<usize> {
+    pub fn flatten_to_ctrs(&self, cfg: &Cfg) -> Vec<usize> {
         let mut out = vec![0; cfg.place_count];
 
         match &self.deps {
             Some(Deps::All(deps)) => {
                 for dep in deps {
-                    add_ctrs(&mut out, &dep.flatten_to_ctrs(ctx, cfg));
+                    add_ctrs(&mut out, &dep.flatten_to_ctrs(cfg));
                 }
             }
             Some(Deps::Xor(deps)) => {
                 for dep in deps {
-                    for (fdep, out_dep) in dep.flatten_to_ctrs(ctx, cfg).into_iter().zip(&mut out) {
+                    for (fdep, out_dep) in dep.flatten_to_ctrs(cfg).into_iter().zip(&mut out) {
                         *out_dep = fdep.max(*out_dep);
                     }
                 }
             }
-            Some(Deps::Func(name, deps)) => {
-                ctx.get_sig(name, ArgLives::new(perms))
-            }
+            Some(Deps::Func(name, ..)) => panic!(
+                "Cannot flatten unsubstituted call node: _{} > {name:?}(..)",
+                self.place
+            ),
             None => {}
         }
 
@@ -107,10 +130,10 @@ impl<T: Clone> DepGraph<T> {
         out
     }
 
-    fn meld(&mut self, reference: &Vec<Option<Deps<T>>>) {
+    pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                dep.deps = reference[dep.place].clone();
+                *dep = reference[dep.place].clone();
                 dep.meld(reference);
             }
         }

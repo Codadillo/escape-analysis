@@ -9,9 +9,9 @@ use super::{
 };
 
 #[derive(Debug)]
-pub enum PolySig {
-    Any(usize, ReturnLives),
-    Mono(HashMap<ArgLives, ReturnLives>),
+pub struct PolySig {
+    any: Option<(usize, ReturnLives)>,
+    mono: HashMap<ArgLives, ReturnLives>,
 }
 
 #[derive(Debug)]
@@ -27,26 +27,42 @@ impl Context {
     }
 
     pub fn get_sig(&self, name: &Ident, args: &ArgLives) -> Option<&ReturnLives> {
-        match self.function_sigs.get(name)? {
-            PolySig::Any(count, ret) => (*count == args.arg_count()).then_some(ret),
-            PolySig::Mono(mono) => mono.get(args),
-        }
+        let sig = self.function_sigs.get(name)?;
+        sig.mono.get(args).or_else(|| {
+            sig.any
+                .as_ref()
+                .filter(|(count, _)| *count == args.arg_count())
+                .map(|(_, r)| r)
+        })
     }
 
-    pub fn insert_any(&mut self, name: Ident, arg_count: usize, perm: Perm) {
+    pub fn insert_constructor(&mut self, name: Ident, arg_count: usize) {
         self.function_sigs.insert(
             name,
-            PolySig::Any(
-                arg_count,
-                ReturnLives::new(
-                    DepGraph {
-                        place: arg_count,
-                        weight: Some(perm),
-                        deps: Some(Deps::All((1..arg_count).map(DepGraph::leaf).collect())),
-                    },
-                    &(1..arg_count).collect(),
-                ),
-            ),
+            PolySig {
+                any: Some((
+                    arg_count,
+                    ReturnLives::new(
+                        DepGraph {
+                            place: arg_count + 1,
+                            weight: Some(Perm::Shared),
+                            deps: Some(Deps::All((1..=arg_count).map(DepGraph::leaf).collect())),
+                        },
+                        &(1..=arg_count).collect(),
+                    ),
+                )),
+                mono: HashMap::from_iter([(
+                    ArgLives::new((1..=arg_count).map(|a| (a, Perm::Exclusive)).collect()),
+                    ReturnLives::new(
+                        DepGraph {
+                            place: arg_count + 1,
+                            weight: Some(Perm::Exclusive),
+                            deps: Some(Deps::All((1..=arg_count).map(DepGraph::leaf).collect())),
+                        },
+                        &(1..=arg_count).collect(),
+                    ),
+                )]),
+            },
         );
     }
 }

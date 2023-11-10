@@ -88,6 +88,18 @@ impl Cfg {
         out
     }
 
+    /// This could not cover every block if unreachable blocks exist.
+    pub fn bb_order(&self) -> Vec<usize> {
+        let mut order = vec![0];
+        let mut focus = 0;
+        while let Some(block) = order.get(focus) {
+            order.extend(self.successors(*block));
+            focus += 1;
+        }
+
+        order
+    }
+
     pub fn statements(&self) -> impl Iterator<Item = &Statement> {
         self.basic_blocks.iter().map(|b| &b.stmnts).flatten()
     }
