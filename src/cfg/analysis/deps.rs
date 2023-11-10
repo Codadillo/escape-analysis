@@ -83,6 +83,7 @@ impl<T: Clone> DepGraph<T> {
                         }
                     },
                 ),
+                Statement::Nop => continue,
             };
 
             base_deps[p] = DepGraph {
@@ -140,7 +141,7 @@ impl<T: Clone> DepGraph<T> {
     }
 }
 
-pub fn add_ctrs(a: &mut Vec<usize>, b: &Vec<usize>) {
+pub fn add_ctrs(a: &mut [usize], b: &[usize]) {
     for (i, j) in a.iter_mut().zip(b) {
         *i += j;
     }

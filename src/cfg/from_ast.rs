@@ -12,7 +12,7 @@ pub struct ConversionState {
 impl ConversionState {
     pub fn from_ast(func: ast::Function) -> Cfg {
         let mut this = ConversionState {
-            cfg: Cfg::with_args(func.args.len()),
+            cfg: Cfg::with_args(func.name, func.args.len()),
             scopes: Vec::new(),
             last_block: 0,
         };

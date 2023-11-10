@@ -8,10 +8,10 @@ use crate::cfg::{
         deps::{add_ctrs, DepGraph},
         signature::ArgLives,
     },
-    Cfg,
+    Cfg, Terminator,
 };
 
-use super::{context::Context, deps::Deps, lva::LVA};
+use super::{context::Context, deps::Deps, lva::LVA, signature::ReturnLives};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Perm {
@@ -35,13 +35,14 @@ pub struct LRA {
     pub lva: LVA,
     pub plva: HashMap<(usize, isize), HashSet<usize>>,
 
-    pub dep_graphs: Vec<DepGraph<Perm>>,
+    pub graphs: Vec<DepGraph<Perm>>,
     pub plra: HashMap<(usize, isize), HashMap<usize, Perm>>,
+    pub ret: ReturnLives,
 }
 
 impl LRA {
-    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: &BTreeMap<usize, Perm>) -> Self {
-        assert_eq!(monomorph.len(), cfg.arg_count);
+    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: &ArgLives) -> Self {
+        assert_eq!(monomorph.perms.len(), cfg.arg_count);
 
         let lva = LVA::analyze(cfg);
         let plva = lva.point_lva(cfg);
@@ -55,31 +56,36 @@ impl LRA {
 
         let mut plra = HashMap::new();
 
-        let mut pred_perms = monomorph.clone();
-        for (p, live) in sorted_plva {
+        let mut pred_perms = monomorph.perms.clone();
+        for (p, live) in sorted_plva.iter().copied() {
             if p.1 < 0 {
                 // TODO
                 continue;
             }
 
             for &lv in live {
-                match &graphs[lv].deps {
-                    Some(Deps::Func(name, args)) => {
-                        let mut arg_perms = BTreeMap::new();
-                        let mut rename_map = HashMap::new();
-                        for (i, arg) in args.iter().enumerate() {
-                            arg_perms.insert(i + 1, pred_perms[&arg.place]);
-                            rename_map.insert(i + 1, arg.place);
-                        }
+                if let Some(Deps::Func(name, args)) = &graphs[lv].deps {
+                    // if name == &cfg.name {
+                    //     todo!("recursion");
+                    // }
 
-                        let sig = ctx.calculate_sig(name, &ArgLives::new(arg_perms)).unwrap();
-
-                        assert!(sig.new_lives.is_subset(&HashSet::from_iter([sig.graph.place])), "{sig:?}");
-                        rename_map.insert(sig.graph.place, graphs[lv].place);
-
-                        graphs[lv] = sig.graph.clone().rename(&rename_map);
+                    let mut arg_perms = BTreeMap::new();
+                    let mut rename_map = HashMap::new();
+                    for (i, arg) in args.iter().enumerate() {
+                        arg_perms.insert(i + 1, pred_perms[&arg.place]);
+                        rename_map.insert(i + 1, arg.place);
                     }
-                    _ => {}
+
+                    let sig = ctx.compute_sig(name, &ArgLives::new(arg_perms)).unwrap();
+
+                    assert!(
+                        sig.new_lives
+                            .is_subset(&HashSet::from_iter([sig.graph.place])),
+                        "{sig:?}"
+                    );
+                    rename_map.insert(sig.graph.place, graphs[lv].place);
+
+                    graphs[lv] = sig.graph.clone().rename(&rename_map);
                 }
             }
 
@@ -102,7 +108,7 @@ impl LRA {
                 .map(|(i, ctr)| {
                     if ctr == 0 {
                         None
-                    } else if monomorph.get(&i) != Some(&Perm::Shared) && ctr == 1 {
+                    } else if monomorph.perms.get(&i) != Some(&Perm::Shared) && ctr == 1 {
                         Some(Perm::Exclusive)
                     } else {
                         Some(Perm::Shared)
@@ -112,24 +118,44 @@ impl LRA {
 
             let mut live_refs = HashMap::new();
             for &lv in live {
-                populate_perms(ctx, &mut graphs[lv], None, &base_perms, &mut live_refs);
+                populate_perms(&mut graphs[lv], None, &base_perms, &mut live_refs);
                 pred_perms.insert(lv, graphs[lv].weight.unwrap());
             }
 
             plra.insert(*p, live_refs);
         }
 
+        let ret_point = sorted_plva.last().unwrap().0;
+        let ret_place = match cfg.basic_blocks[ret_point.0].terminator {
+            Some(Terminator::Return(p)) => p,
+            _ => panic!("Malformed cfg for {}: bad return block", cfg.name),
+        };
+
+        let graph = graphs[ret_place].clone();
+        let perms = plra[&ret_point].clone();
+        let new_lives = perms
+            .keys()
+            .copied()
+            .filter(|p| !(1..=cfg.arg_count).contains(p))
+            .collect();
+
+        let ret = ReturnLives {
+            new_lives,
+            graph,
+            perms,
+        };
+
         Self {
             lva,
             plva,
             plra,
-            dep_graphs: graphs,
+            ret,
+            graphs,
         }
     }
 }
 
 fn populate_perms(
-    ctx: &Context,
     graph: &mut DepGraph<Perm>,
     parent: Option<Perm>,
     base_perms: &Vec<Option<Perm>>,
@@ -152,7 +178,7 @@ fn populate_perms(
     match &mut graph.deps {
         Some(Deps::All(deps) | Deps::Xor(deps)) => {
             for dep in deps {
-                populate_perms(ctx, dep, graph.weight, base_perms, out_perms);
+                populate_perms(dep, graph.weight, base_perms, out_perms);
             }
         }
         Some(Deps::Func(name, _)) => panic!(

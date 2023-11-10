@@ -2,13 +2,13 @@ use std::collections::HashMap;
 
 use crate::{
     ast::Ident,
-    cfg::{Cfg, Terminator},
+    cfg::Cfg,
 };
 
 use super::{
     deps::{DepGraph, Deps},
     lra::{Perm, LRA},
-    signature::{ArgLives, ReturnLives},
+    signature::{ArgLives, ReturnLives, Signature},
 };
 
 #[derive(Debug, Default)]
@@ -31,41 +31,27 @@ impl Context {
         }
     }
 
-    pub fn calculate_sig(&mut self, name: &Ident, args: &ArgLives) -> Option<ReturnLives> {
+    pub fn compute_sig(&mut self, name: &Ident, args: &ArgLives) -> Option<ReturnLives> {
         if let Some(ret) = self.get_sig(name, args) {
             return Some(ret);
         }
 
-        let cfg = self.cfgs.get(name)?.clone();
-        let mut lra = LRA::analyze(self, &cfg, &args.perms);
-
-        let ret_block = *cfg.bb_order().last().unwrap();
-        let ret_point = (ret_block, cfg.basic_blocks[ret_block].stmnts.len() as isize);
-        let ret_place = match cfg.basic_blocks[ret_block].terminator {
-            Some(Terminator::Return(p)) => p,
-            _ => panic!("Malformed cfg for {name}: bad return block"),
-        };
-
-        let graph = lra.dep_graphs.remove(ret_place);
-        let perms = lra.plra.remove(&ret_point).unwrap();
-        let new_lives = perms
-            .keys()
-            .copied()
-            .filter(|p| !(1..=cfg.arg_count).contains(p))
-            .collect();
-
-        let ret = ReturnLives {
-            new_lives,
-            graph,
-            perms,
-        };
+        let lra = LRA::analyze(self, &self.cfgs.get(name)?.clone(), &args);
 
         self.function_sigs
             .entry(name.clone())
             .or_default()
             .mono
-            .insert(args.clone(), ret.clone());
-        Some(ret)
+            .insert(args.clone(), lra.ret.clone());
+        Some(lra.ret)
+    }
+
+    pub fn set_mono_sig(&mut self, name: Ident, sig: Signature) {
+        self.function_sigs
+            .entry(name)
+            .or_default()
+            .mono
+            .insert(sig.args, sig.ret);
     }
 
     pub fn get_sig(&self, name: &Ident, args: &ArgLives) -> Option<ReturnLives> {
@@ -105,6 +91,14 @@ impl Context {
                     &(1..=args.arg_count()).collect(),
                 ))
             }
+            "invent" => Some(ReturnLives::new(
+                DepGraph {
+                    place: 0,
+                    weight: Some(Perm::Exclusive),
+                    deps: None,
+                },
+                &(1..=args.arg_count()).collect(),
+            )),
             _ => None,
         }
     }

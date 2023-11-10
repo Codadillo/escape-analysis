@@ -9,6 +9,7 @@ use from_ast::ConversionState;
 
 #[derive(Clone)]
 pub struct Cfg {
+    pub name: ast::Ident,
     pub arg_count: usize,
     pub place_count: usize,
     pub basic_blocks: Vec<BasicBlock>,
@@ -24,6 +25,7 @@ pub struct BasicBlock {
 #[derive(Clone)]
 pub enum Statement {
     Assign(Assign),
+    Nop,
 }
 
 #[derive(Clone)]
@@ -60,9 +62,10 @@ impl Cfg {
         ConversionState::from_ast(func)
     }
 
-    pub fn with_args(arg_count: usize) -> Self {
+    pub fn with_args(name: ast::Ident, arg_count: usize) -> Self {
         Self {
-            arg_count: arg_count,
+            name,
+            arg_count,
             place_count: arg_count + 1,
             basic_blocks: vec![BasicBlock {
                 phi: vec![],
@@ -101,7 +104,7 @@ impl Cfg {
     }
 
     pub fn statements(&self) -> impl Iterator<Item = &Statement> {
-        self.basic_blocks.iter().map(|b| &b.stmnts).flatten()
+        self.basic_blocks.iter().flat_map(|b| &b.stmnts)
     }
 
     pub fn get_statement(&self, p: (usize, usize)) -> Option<&Statement> {
@@ -112,8 +115,7 @@ impl Cfg {
         self.basic_blocks
             .iter()
             .enumerate()
-            .map(|(i, b)| b.stmnts.iter().enumerate().map(move |(j, s)| ((i, j), s)))
-            .flatten()
+            .flat_map(|(i, b)| b.stmnts.iter().enumerate().map(move |(j, s)| ((i, j), s)))
     }
 
     pub fn successors(&self, block: usize) -> Vec<usize> {

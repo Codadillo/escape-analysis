@@ -2,14 +2,14 @@ use std::fs;
 
 use perm_mem::{
     cfg::{
-        analysis::{context::Context, lra::Perm, signature::ArgLives},
+        analysis::{context::Context, lra::Perm, recursion::UnRecurse, signature::ArgLives},
         Cfg,
     },
     parser,
 };
 
 fn main() {
-    let input = fs::read_to_string("inputs/identity.rs").unwrap();
+    let input = fs::read_to_string("inputs/factorial.rs").unwrap();
 
     let parser = parser::ModuleParser::new();
     let module = match parser.parse(&input) {
@@ -24,12 +24,18 @@ fn main() {
             .map(|f| (f.name.clone(), Cfg::from_ast(f))),
     );
 
+    // for (name, cfg) in ctx.cfgs.clone() {
+    //     let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
+    //     let ret = ctx.calculate_sig(&name, &args).unwrap();
+    //     println!("fn {name}: {:?} <- {cfg:?}", ret.perms);
+    // }
 
-    for (name, cfg) in ctx.cfgs.clone() {
-        let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
-        let ret = ctx.calculate_sig(&name, &args).unwrap();
-        println!("{name}: {:?} <- {cfg:?}", ret.perms);
-    }
+    let cfg = &ctx.cfgs[&"factorial".into()].clone();
+    UnRecurse::analyze(
+        &mut ctx,
+        cfg,
+        &ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]),
+    );
 
     // let lra = LRA::analyze(
     //     &mut ctx,
