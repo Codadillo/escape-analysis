@@ -9,7 +9,7 @@ use perm_mem::{
 };
 
 fn main() {
-    let input = fs::read_to_string("testsimple.rs").unwrap();
+    let input = fs::read_to_string("inputs/identity.rs").unwrap();
 
     let parser = parser::ModuleParser::new();
     let module = match parser.parse(&input) {

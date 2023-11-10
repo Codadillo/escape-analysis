@@ -1,3 +1,3 @@
 fn my_function(a, b) {
-    function(a, b, b)
+    tuple(a, b, b)
 }
