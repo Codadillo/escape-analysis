@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
 
@@ -44,5 +46,11 @@ pub struct Call {
 impl<S: Into<String>> From<S> for Ident {
     fn from(value: S) -> Self {
         Ident(value.into())
+    }
+}
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }

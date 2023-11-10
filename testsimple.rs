@@ -1,11 +1,15 @@
+fn identity(a) {
+    a
+}
+
 fn my_function(a, b, c) {
-    let input = function1(a);
+    let input = identity(a);
 
     let hello = if input {           
-        function1(c)              
+        identity(c)              
     } else {
-        function1(c)  
+        identity(c)  
     };
 
-    function3(input, input, hello)   
+    tuple(input, input, hello)   
 }

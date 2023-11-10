@@ -40,7 +40,7 @@ pub struct LRA {
 }
 
 impl LRA {
-    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: HashMap<usize, Perm>) -> Self {
+    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: &BTreeMap<usize, Perm>) -> Self {
         assert_eq!(monomorph.len(), cfg.arg_count);
 
         let lva = LVA::analyze(cfg);
@@ -72,9 +72,9 @@ impl LRA {
                             rename_map.insert(i + 1, arg.place);
                         }
 
-                        let sig = ctx.get_sig(name, &ArgLives::new(arg_perms)).unwrap();
+                        let sig = ctx.calculate_sig(name, &ArgLives::new(arg_perms)).unwrap();
 
-                        assert_eq!(sig.new_lives, HashSet::from_iter([sig.graph.place]));
+                        assert!(sig.new_lives.is_subset(&HashSet::from_iter([sig.graph.place])), "{sig:?}");
                         rename_map.insert(sig.graph.place, graphs[lv].place);
 
                         graphs[lv] = sig.graph.clone().rename(&rename_map);

@@ -12,9 +12,9 @@ List<T, S>: Vec<T> = {
     }
 };
 
-ListTerminated<T, S>: Vec<T> = {
-    <(<T> S)*> => <>
-};
+ListTerminated<T, S>: Vec<T> = <(<T> S)*> => <>;
+
+pub Module: Vec<Function> = <(<Function>)*> => <>;
 
 pub Function: Function = "fn" <name:Ident> "(" <args:List<Ident, ",">> ")" <body:Block> => Function {<>};
 

@@ -22,23 +22,27 @@ pub struct ReturnLives {
 
 impl Signature {
     pub fn new(arg_perms: &[Perm], ret_graph: DepGraph<Perm>) -> Self {
-        let args: BTreeMap<_, _> = arg_perms
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(i, p)| (i + 1, p))
-            .collect();
+        let args = ArgLives::from_direct(arg_perms);
+        let ret = ReturnLives::new(ret_graph, &args.perms.keys().copied().collect());
 
-        Self {
-            ret: ReturnLives::new(ret_graph, &args.keys().copied().collect()),
-            args: ArgLives::new(args),
-        }
+        Self { ret, args }
     }
 }
 
 impl ArgLives {
     pub fn new(perms: BTreeMap<usize, Perm>) -> Self {
         Self { perms }
+    }
+
+    pub fn from_direct(arg_perms: &[Perm]) -> Self {
+        Self {
+            perms: arg_perms
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, p)| (i + 1, p))
+                .collect(),
+        }
     }
 
     pub fn arg_count(&self) -> usize {
