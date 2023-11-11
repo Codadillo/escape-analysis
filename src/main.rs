@@ -2,7 +2,11 @@ use std::{env, fs};
 
 use perm_mem::{
     cfg::{
-        analysis::{context::Context, lra::Perm, signature::ArgLives},
+        analysis::{
+            context::Context,
+            lra::{Perm, LRA},
+            signature::ArgLives,
+        },
         Cfg,
     },
     parser,
@@ -27,14 +31,17 @@ fn main() {
     for (name, cfg) in ctx.cfgs.clone() {
         let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
         let ret = ctx.compute_sig(&name, &args).unwrap();
-        println!("\nfn {name}: {:?} <- {cfg:?}", ret.perms);
-        println!("{ret:?}");
+        println!("{name}: {:?} <- {cfg:?}", ret.perms);
     }
 
+    // println!("----------------");
+
+    // let cfg = ctx.cfgs.get(&"my_function".into()).unwrap().clone();
+    // println!("{cfg:?}");
     // let lra = LRA::analyze(
     //     &mut ctx,
     //     &cfg,
-    //     (1..=cfg.arg_count).map(|p| (p, Perm::Exclusive)).collect(),
+    //     &ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]),
     // );
 
     // for (i, g) in lra.dep_graphs.iter().enumerate() {

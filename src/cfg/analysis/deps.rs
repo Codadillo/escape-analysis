@@ -152,9 +152,9 @@ impl<T: Clone> DepGraph<T> {
     pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                if !self.transparent {
-                    *dep = reference[dep.place].clone();
-                }
+                let trans = dep.transparent;
+                *dep = reference[dep.place].clone();
+                dep.transparent = trans;
 
                 dep.meld(reference);
             }

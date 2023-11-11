@@ -63,7 +63,7 @@ impl LRA {
                 continue;
             }
 
-            // println!("{p:?}");
+            println!("{p:?}");
 
             for &lv in live {
                 if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
@@ -94,6 +94,10 @@ impl LRA {
                 graph.meld(&reference);
             }
 
+            for &lv in live {
+                println!("{lv}: {:?}", graphs[lv]);
+            }
+    
             let live_ctrs = live.iter().map(|&l| graphs[l].flatten_to_ctrs(cfg)).fold(
                 vec![0; cfg.place_count],
                 |mut acc, ctr| {
