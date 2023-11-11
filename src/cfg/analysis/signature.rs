@@ -56,12 +56,12 @@ impl ReturnLives {
     pub fn new(graph: DepGraph<Perm>, old_lives: &HashSet<usize>) -> Self {
         fn traverse(
             graph: &DepGraph<Perm>,
-            parent_trans: bool,
+            _parent_trans: bool,
             old_lives: &HashSet<usize>,
             new_lives: &mut HashSet<usize>,
             perms: &mut HashMap<usize, Perm>,
         ) {
-            if !parent_trans {
+            if !graph.transparent {
                 if !old_lives.contains(&graph.place) {
                     new_lives.insert(graph.place);
                 }

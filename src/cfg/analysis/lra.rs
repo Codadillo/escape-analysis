@@ -63,9 +63,7 @@ impl LRA {
                 continue;
             }
 
-            println!("{p:?}");
-
-            for &lv in live {
+            for &lv in live {            
                 if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
                     let mut arg_perms = BTreeMap::new();
                     let mut rename_map = HashMap::new();
@@ -88,16 +86,12 @@ impl LRA {
                     graphs[lv] = sig.graph.clone().rename(&rename_map);
                 }
             }
-
+    
             let reference = graphs.clone();
             for graph in &mut graphs {
                 graph.meld(&reference);
             }
 
-            for &lv in live {
-                println!("{lv}: {:?}", graphs[lv]);
-            }
-    
             let live_ctrs = live.iter().map(|&l| graphs[l].flatten_to_ctrs(cfg)).fold(
                 vec![0; cfg.place_count],
                 |mut acc, ctr| {
@@ -135,13 +129,8 @@ impl LRA {
             _ => panic!("Malformed cfg for {}: bad return block", cfg.name),
         };
 
-        let graph = graphs[ret_place].clone();
-        // let perms = plra[&ret_point].clone();
-        // let new_lives = perms
-        //     .keys()
-        //     .copied()
-        //     .filter(|p| !(1..=cfg.arg_count).contains(p))
-        //     .collect();
+        let mut graph = graphs[ret_place].clone();
+        graph.squash();
 
         let ret = ReturnLives::new(graph, &(1..=cfg.arg_count).collect());
 

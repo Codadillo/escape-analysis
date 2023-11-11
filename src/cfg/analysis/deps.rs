@@ -1,11 +1,14 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+};
 
 use crate::{
     ast::Ident,
     cfg::{Cfg, Statement, Value},
 };
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 pub struct DepGraph<T> {
     pub place: usize,
     pub weight: Option<T>,
@@ -13,7 +16,7 @@ pub struct DepGraph<T> {
     pub transparent: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Deps<T> {
     All(Vec<DepGraph<T>>),
     Xor(Vec<DepGraph<T>>),
@@ -55,6 +58,48 @@ impl<T> DepGraph<T> {
                 }
             }),
             transparent: self.transparent,
+        }
+    }
+}
+
+impl<T: Eq + std::hash::Hash> DepGraph<T> {
+    pub fn simplify(&mut self) {
+        match &mut self.deps {
+            Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
+                for dep in deps {
+                    dep.simplify();
+                }
+            }
+            None => {}
+        }
+
+        if let Some(Deps::Xor(deps)) = &mut self.deps {
+            let tmp = std::mem::take(deps);
+            *deps = tmp
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .collect();
+        }
+    }
+
+    pub fn squash(&mut self) {
+        self.simplify();
+
+        match &mut self.deps {
+            Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
+                for dep in deps {
+                    dep.squash();
+                }
+            }
+            None => {}
+        }
+
+        match &mut self.deps {
+            Some(Deps::Xor(deps)) if deps.len() == 1 && self.transparent => {
+                *self = deps.pop().unwrap();
+            },
+            _ => {},
         }
     }
 }
@@ -152,9 +197,9 @@ impl<T: Clone> DepGraph<T> {
     pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                let trans = dep.transparent;
+                // let trans = dep.transparent;
                 *dep = reference[dep.place].clone();
-                dep.transparent = trans;
+                // dep.transparent |= trans;
 
                 dep.meld(reference);
             }

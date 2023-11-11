@@ -32,6 +32,7 @@ fn main() {
         let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
         let ret = ctx.compute_sig(&name, &args).unwrap();
         println!("{name}: {:?} <- {cfg:?}", ret.perms);
+        println!("{:#?}", ret);
     }
 
     // println!("----------------");
