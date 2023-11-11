@@ -64,7 +64,7 @@ impl LRA {
             }
 
             // println!("{p:?}");
-        
+
             for &lv in live {
                 if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
                     let mut arg_perms = BTreeMap::new();
@@ -81,7 +81,9 @@ impl LRA {
                             .is_subset(&HashSet::from_iter([sig.graph.place])),
                         "{sig:?}"
                     );
-                    rename_map.insert(sig.graph.place, graphs[lv].place);
+                    if !(1..=args.len()).contains(&sig.graph.place) {
+                        rename_map.insert(sig.graph.place, graphs[lv].place);
+                    }
 
                     graphs[lv] = sig.graph.clone().rename(&rename_map);
                 }
