@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::cfg::analysis::deps::Deps;
+
 use super::{deps::DepGraph, lra::Perm};
 
 #[derive(Clone, Debug)]
@@ -13,7 +15,7 @@ pub struct ArgLives {
     pub perms: BTreeMap<usize, Perm>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ReturnLives {
     pub graph: DepGraph<Perm>,
     pub new_lives: HashSet<usize>,
@@ -54,32 +56,41 @@ impl ReturnLives {
     pub fn new(graph: DepGraph<Perm>, old_lives: &HashSet<usize>) -> Self {
         fn traverse(
             graph: &DepGraph<Perm>,
+            parent_trans: bool,
             old_lives: &HashSet<usize>,
             new_lives: &mut HashSet<usize>,
             perms: &mut HashMap<usize, Perm>,
         ) {
-            if !old_lives.contains(&graph.place) {
-                new_lives.insert(graph.place);
+            if !parent_trans {
+                if !old_lives.contains(&graph.place) {
+                    new_lives.insert(graph.place);
+                }
+
+                perms.insert(graph.place, graph.weight.unwrap());
             }
 
-            perms.insert(graph.place, graph.weight.unwrap());
+            match &graph.deps {
+                Some(Deps::All(deps) | Deps::Xor(deps)) => {
+                    for dep in deps {
+                        traverse(dep, graph.transparent, old_lives, new_lives, perms);
+                    }
+                }
+                Some(Deps::Function(name, _)) => {
+                    panic!("Unexpected function dependenyc {name} in returnlives")
+                }
+                None => {}
+            }
         }
 
         let mut new_lives = HashSet::new();
         let mut perms = HashMap::new();
 
-        traverse(&graph, old_lives, &mut new_lives, &mut perms);
+        traverse(&graph, false, old_lives, &mut new_lives, &mut perms);
 
         Self {
             graph,
             new_lives,
             perms,
         }
-    }
-
-    pub fn empty_newlives(graph: DepGraph<Perm>) -> Self {
-        let mut this = Self::new(graph, &HashSet::new());
-        this.new_lives = HashSet::new();
-        this
     }
 }

@@ -30,7 +30,7 @@ impl Debug for Perm {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LRA {
     pub lva: LVA,
     pub plva: HashMap<(usize, isize), HashSet<usize>>,
@@ -63,12 +63,10 @@ impl LRA {
                 continue;
             }
 
+            // println!("{p:?}");
+        
             for &lv in live {
-                if let Some(Deps::Func(name, args)) = &graphs[lv].deps {
-                    // if name == &cfg.name {
-                    //     todo!("recursion");
-                    // }
-
+                if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
                     let mut arg_perms = BTreeMap::new();
                     let mut rename_map = HashMap::new();
                     for (i, arg) in args.iter().enumerate() {
@@ -132,18 +130,14 @@ impl LRA {
         };
 
         let graph = graphs[ret_place].clone();
-        let perms = plra[&ret_point].clone();
-        let new_lives = perms
-            .keys()
-            .copied()
-            .filter(|p| !(1..=cfg.arg_count).contains(p))
-            .collect();
+        // let perms = plra[&ret_point].clone();
+        // let new_lives = perms
+        //     .keys()
+        //     .copied()
+        //     .filter(|p| !(1..=cfg.arg_count).contains(p))
+        //     .collect();
 
-        let ret = ReturnLives {
-            new_lives,
-            graph,
-            perms,
-        };
+        let ret = ReturnLives::new(graph, &(1..=cfg.arg_count).collect());
 
         Self {
             lva,
@@ -181,11 +175,10 @@ fn populate_perms(
                 populate_perms(dep, graph.weight, base_perms, out_perms);
             }
         }
-        Some(Deps::Func(name, _)) => panic!(
-            "Unexpected Deps::Func while populating: _{} > {name:?}(..)",
+        Some(Deps::Function(name, _)) => panic!(
+            "Unexpected Deps::Func while populating: {} > {name:?}(..)",
             graph.place
         ),
-
         None => {}
     }
 }

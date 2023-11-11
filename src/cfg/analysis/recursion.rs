@@ -1,37 +1,45 @@
-use std::collections::BTreeMap;
+use crate::cfg::{
+    analysis::{lra::LRA, signature::Signature},
+    Assign, BasicBlock, Cfg, Statement, Value,
+};
 
-use crate::cfg::{Assign, BasicBlock, Cfg, Statement, Value, analysis::{lra::LRA, signature::Signature}};
+use super::{context::Context, signature::ArgLives};
 
-use super::{lra::Perm, context::Context, signature::ArgLives};
+pub fn compute_recursive_lra(ctx: &mut Context, cfg: &Cfg, monomorph: &ArgLives) -> LRA {
+    let mut no_recurse = cfg.clone();
+    let mut recurses = false;
 
-pub struct UnRecurse {}
+    for i in 0..no_recurse.basic_blocks.len() {
+        if no_recurse.basic_blocks[i].stmnts.iter().any(|s| matches!(
+            s,
+            Statement::Assign(Assign { value: Value::Call { func, .. }, .. }) if func == &cfg.name
+        )) {
+            kill_linear_path(&mut no_recurse, i);
+            recurses = true;
+        }
+    }
 
-impl UnRecurse {
-    pub fn analyze(ctx: &mut Context, cfg: &Cfg, monomorph: &ArgLives) -> Self {
-        let mut no_recurse = cfg.clone();
+    let mut lra = LRA::analyze(ctx, &no_recurse, monomorph);
+    if !recurses {
+        return lra;
+    }
 
-        for i in 0..no_recurse.basic_blocks.len() {
-            if no_recurse.basic_blocks[i].stmnts.iter().any(|s| matches!(
-                s,
-                Statement::Assign(Assign { value: Value::Call { func, .. }, .. }) if func == &cfg.name
-            )) {
-                kill_linear_path(&mut no_recurse, i);
-            }
+    loop {
+        ctx.set_mono_sig(
+            cfg.name.clone(),
+            Signature {
+                args: monomorph.clone(),
+                ret: lra.ret.clone(),
+            },
+        );
+
+        let next = LRA::analyze(ctx, cfg, monomorph);
+
+        if next == lra {
+            return lra;
         }
 
-        println!("{no_recurse:?}");
-
-        let ground_truth = LRA::analyze(ctx, &no_recurse, monomorph);
-        println!("g {:?}", ground_truth.ret);
-
-        ctx.set_mono_sig(cfg.name.clone(), Signature {
-            args: monomorph.clone(),
-            ret: ground_truth.ret,
-        });
-        let next = LRA::analyze(ctx, cfg, monomorph);
-        println!("n {:?}", next.ret);
-
-        Self {}
+        lra = next;
     }
 }
 

@@ -60,7 +60,7 @@ impl LVABlock {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LVA {
     pub blocks: Vec<LVABlock>,
 }

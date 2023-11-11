@@ -9,7 +9,11 @@ impl fmt::Debug for Cfg {
         writeln!(f, ":")?;
 
         for (i, bb) in self.basic_blocks.iter().enumerate() {
-            writeln!(f, "{i}: {bb:#?}")?;
+            write!(f, "{i}: {bb:#?}")?;
+
+            if i + 1 != self.basic_blocks.len() {
+                writeln!(f)?;
+            }
         }
 
         Ok(())

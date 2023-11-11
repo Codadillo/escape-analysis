@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{
-    ast::Ident,
-    cfg::Cfg,
-};
+use crate::{ast::Ident, cfg::Cfg};
 
 use super::{
     deps::{DepGraph, Deps},
-    lra::{Perm, LRA},
+    lra::Perm,
+    recursion,
     signature::{ArgLives, ReturnLives, Signature},
 };
 
@@ -36,7 +34,7 @@ impl Context {
             return Some(ret);
         }
 
-        let lra = LRA::analyze(self, &self.cfgs.get(name)?.clone(), &args);
+        let lra = recursion::compute_recursive_lra(self, &self.cfgs.get(name)?.clone(), &args);
 
         self.function_sigs
             .entry(name.clone())
@@ -79,6 +77,7 @@ impl Context {
                         place,
                         weight: Some(args.perms[&place]),
                         deps: None,
+                        transparent: false,
                     })
                     .collect();
 
@@ -87,6 +86,7 @@ impl Context {
                         place: 0,
                         weight: Some(Perm::Exclusive),
                         deps: Some(Deps::All(deps)),
+                        transparent: false,
                     },
                     &(1..=args.arg_count()).collect(),
                 ))
@@ -96,6 +96,7 @@ impl Context {
                     place: 0,
                     weight: Some(Perm::Exclusive),
                     deps: None,
+                    transparent: false,
                 },
                 &(1..=args.arg_count()).collect(),
             )),

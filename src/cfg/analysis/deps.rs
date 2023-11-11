@@ -1,22 +1,23 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     ast::Ident,
     cfg::{Cfg, Statement, Value},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DepGraph<T> {
     pub place: usize,
     pub weight: Option<T>,
     pub deps: Option<Deps<T>>,
+    pub transparent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Deps<T> {
     All(Vec<DepGraph<T>>),
     Xor(Vec<DepGraph<T>>),
-    Func(Ident, Vec<DepGraph<T>>),
+    Function(Ident, Vec<DepGraph<T>>),
 }
 
 impl<T> DepGraph<T> {
@@ -25,20 +26,35 @@ impl<T> DepGraph<T> {
             place,
             weight: None,
             deps: None,
+            transparent: false,
+        }
+    }
+
+    pub fn dummy_deps(deps: Deps<T>) -> Self {
+        Self::weightless(0, deps)
+    }
+
+    pub fn weightless(place: usize, deps: Deps<T>) -> Self {
+        Self {
+            place,
+            weight: None,
+            deps: Some(deps),
+            transparent: false,
         }
     }
 
     pub fn rename(self, map: &HashMap<usize, usize>) -> Self {
         Self {
-            place: map[&self.place],
+            place: *map.get(&self.place).unwrap_or(&self.place),
             weight: self.weight,
             deps: self.deps.map(|deps| match deps {
                 Deps::All(ds) => Deps::All(ds.into_iter().map(|d| d.rename(map)).collect()),
                 Deps::Xor(ds) => Deps::Xor(ds.into_iter().map(|d| d.rename(map)).collect()),
-                Deps::Func(name, ds) => {
-                    Deps::Func(name, ds.into_iter().map(|d| d.rename(map)).collect())
+                Deps::Function(name, ds) => {
+                    Deps::Function(name, ds.into_iter().map(|d| d.rename(map)).collect())
                 }
             }),
+            transparent: self.transparent,
         }
     }
 }
@@ -65,6 +81,7 @@ impl<T: Clone> DepGraph<T> {
                 deps: Some(Deps::Xor(
                     phi.opts.values().map(|&v| DepGraph::leaf(v)).collect(),
                 )),
+                transparent: true,
             };
         }
 
@@ -75,7 +92,7 @@ impl<T: Clone> DepGraph<T> {
                     match &a.value {
                         Value::Place(d) => Deps::All(vec![DepGraph::leaf(*d)]),
                         Value::Call { func, args } => {
-                            Deps::Func(
+                            Deps::Function(
                                 func.clone(),
                                 args.iter().copied().map(DepGraph::leaf).collect(),
                             )
@@ -90,6 +107,7 @@ impl<T: Clone> DepGraph<T> {
                 place: p,
                 weight: None,
                 deps: Some(deps),
+                transparent: false,
             };
         }
 
@@ -120,7 +138,7 @@ impl<T: Clone> DepGraph<T> {
                     }
                 }
             }
-            Some(Deps::Func(name, ..)) => panic!(
+            Some(Deps::Function(name, ..)) => panic!(
                 "Cannot flatten unsubstituted call node: _{} > {name:?}(..)",
                 self.place
             ),
@@ -134,7 +152,10 @@ impl<T: Clone> DepGraph<T> {
     pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                *dep = reference[dep.place].clone();
+                if !self.transparent {
+                    *dep = reference[dep.place].clone();
+                }
+
                 dep.meld(reference);
             }
         }
@@ -144,5 +165,48 @@ impl<T: Clone> DepGraph<T> {
 pub fn add_ctrs(a: &mut [usize], b: &[usize]) {
     for (i, j) in a.iter_mut().zip(b) {
         *i += j;
+    }
+}
+
+impl<T: Debug> Debug for DepGraph<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn fmt<T: Debug>(
+            graph: &DepGraph<T>,
+            parent_trans: bool,
+            f: &mut std::fmt::Formatter<'_>,
+        ) -> std::fmt::Result {
+            write!(f, "DG {{ ")?;
+
+            match parent_trans {
+                true => write!(f, "T({})", graph.place)?,
+                false => write!(f, "{}", graph.place)?,
+            }
+
+            write!(f, ", {:?}", graph.weight)?;
+
+            if let Some(deps) = &graph.deps {
+                write!(f, ", ")?;
+
+                let (name, deps) = match deps {
+                    Deps::All(deps) => ("D::All".to_owned(), deps),
+                    Deps::Xor(deps) => ("D::Xor".to_owned(), deps),
+                    Deps::Function(name, deps) => (name.0.clone(), deps),
+                };
+
+                write!(f, "{name}(")?;
+                for (i, dep) in deps.iter().enumerate() {
+                    fmt(dep, graph.transparent, f)?;
+
+                    if i + 1 != deps.len() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")?;
+            }
+
+            write!(f, " }}")
+        }
+
+        fmt(self, false, f)
     }
 }
