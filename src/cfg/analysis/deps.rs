@@ -13,7 +13,7 @@ pub struct DepGraph<T> {
     pub place: usize,
     pub weight: Option<T>,
     pub deps: Option<Deps<T>>,
-    pub transparent: bool,
+    pub dep_ty: DepType,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -23,13 +23,24 @@ pub enum Deps<T> {
     Function(Ident, Vec<DepGraph<T>>),
 }
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub enum DepType {
+    // aliases its children (i.e. we can pretend it is its children)
+    Transparent,
+
+    // aliases its children, but the childrens' places are from a different function and thus should be ignored
+    TransparentLocked,
+    // uses its children
+    Depend,
+}
+
 impl<T> DepGraph<T> {
     pub fn leaf(place: usize) -> Self {
         Self {
             place,
             weight: None,
             deps: None,
-            transparent: false,
+            dep_ty: DepType::Depend,
         }
     }
 
@@ -42,7 +53,14 @@ impl<T> DepGraph<T> {
             place,
             weight: None,
             deps: Some(deps),
-            transparent: false,
+            dep_ty: DepType::Depend,
+        }
+    }
+
+    pub fn transparent(&self) -> bool {
+        match self.dep_ty {
+            DepType::Transparent | DepType::TransparentLocked => true,
+            DepType::Depend => false,
         }
     }
 
@@ -57,7 +75,7 @@ impl<T> DepGraph<T> {
                     Deps::Function(name, ds.into_iter().map(|d| d.rename(map)).collect())
                 }
             }),
-            transparent: self.transparent,
+            dep_ty: self.dep_ty,
         }
     }
 }
@@ -86,6 +104,10 @@ impl<T: Eq + std::hash::Hash> DepGraph<T> {
     pub fn squash(&mut self) {
         self.simplify();
 
+        if self.dep_ty == DepType::Transparent {
+            self.dep_ty = DepType::TransparentLocked;
+        }
+
         match &mut self.deps {
             Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
                 for dep in deps {
@@ -96,15 +118,15 @@ impl<T: Eq + std::hash::Hash> DepGraph<T> {
         }
 
         match &mut self.deps {
-            Some(Deps::Xor(deps)) if deps.len() == 1 && self.transparent => {
+            Some(Deps::Xor(deps)) if deps.len() == 1 && self.dep_ty != DepType::Depend => {
                 *self = deps.pop().unwrap();
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
 }
 
-impl<T: Clone> DepGraph<T> {
+impl<T: Clone + Debug> DepGraph<T> {
     pub fn analyze(cfg: &Cfg) -> Vec<Self> {
         let mut base_deps = Self::base_deps(cfg);
         let reference = base_deps.clone();
@@ -126,7 +148,7 @@ impl<T: Clone> DepGraph<T> {
                 deps: Some(Deps::Xor(
                     phi.opts.values().map(|&v| DepGraph::leaf(v)).collect(),
                 )),
-                transparent: true,
+                dep_ty: DepType::Transparent,
             };
         }
 
@@ -152,7 +174,7 @@ impl<T: Clone> DepGraph<T> {
                 place: p,
                 weight: None,
                 deps: Some(deps),
-                transparent: false,
+                dep_ty: DepType::Depend,
             };
         }
 
@@ -197,9 +219,9 @@ impl<T: Clone> DepGraph<T> {
     pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                // let trans = dep.transparent;
-                *dep = reference[dep.place].clone();
-                // dep.transparent |= trans;
+                if self.dep_ty != DepType::TransparentLocked {
+                    *dep = reference[dep.place].clone();
+                }
 
                 dep.meld(reference);
             }
@@ -215,43 +237,36 @@ pub fn add_ctrs(a: &mut [usize], b: &[usize]) {
 
 impl<T: Debug> Debug for DepGraph<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fn fmt<T: Debug>(
-            graph: &DepGraph<T>,
-            parent_trans: bool,
-            f: &mut std::fmt::Formatter<'_>,
-        ) -> std::fmt::Result {
-            write!(f, "DG {{ ")?;
+        write!(f, "DG {{ ")?;
 
-            match parent_trans {
-                true => write!(f, "T({})", graph.place)?,
-                false => write!(f, "{}", graph.place)?,
-            }
-
-            write!(f, ", {:?}", graph.weight)?;
-
-            if let Some(deps) = &graph.deps {
-                write!(f, ", ")?;
-
-                let (name, deps) = match deps {
-                    Deps::All(deps) => ("D::All".to_owned(), deps),
-                    Deps::Xor(deps) => ("D::Xor".to_owned(), deps),
-                    Deps::Function(name, deps) => (name.0.clone(), deps),
-                };
-
-                write!(f, "{name}(")?;
-                for (i, dep) in deps.iter().enumerate() {
-                    fmt(dep, graph.transparent, f)?;
-
-                    if i + 1 != deps.len() {
-                        write!(f, ", ")?;
-                    }
-                }
-                write!(f, ")")?;
-            }
-
-            write!(f, " }}")
+        match self.dep_ty {
+            DepType::Transparent => write!(f, "T({})", self.place)?,
+            DepType::TransparentLocked => write!(f, "L({})", self.place)?,
+            DepType::Depend => write!(f, "{}", self.place)?,
         }
 
-        fmt(self, false, f)
+        write!(f, ", {:?}", self.weight)?;
+
+        if let Some(deps) = &self.deps {
+            write!(f, ", ")?;
+
+            let (name, deps) = match deps {
+                Deps::All(deps) => ("D::All".to_owned(), deps),
+                Deps::Xor(deps) => ("D::Xor".to_owned(), deps),
+                Deps::Function(name, deps) => (name.0.clone(), deps),
+            };
+
+            write!(f, "{name}(")?;
+            for (i, dep) in deps.iter().enumerate() {
+                write!(f, "{dep:?}")?;
+
+                if i + 1 != deps.len() {
+                    write!(f, ", ")?;
+                }
+            }
+            write!(f, ")")?;
+        }
+
+        write!(f, " }}")
     }
 }

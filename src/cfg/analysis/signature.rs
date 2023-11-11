@@ -56,23 +56,25 @@ impl ReturnLives {
     pub fn new(graph: DepGraph<Perm>, old_lives: &HashSet<usize>) -> Self {
         fn traverse(
             graph: &DepGraph<Perm>,
-            _parent_trans: bool,
+            parent_trans: bool,
             old_lives: &HashSet<usize>,
             new_lives: &mut HashSet<usize>,
             perms: &mut HashMap<usize, Perm>,
         ) {
-            if !graph.transparent {
+            if !parent_trans {
                 if !old_lives.contains(&graph.place) {
                     new_lives.insert(graph.place);
                 }
+            }
 
+            if !graph.transparent() {
                 perms.insert(graph.place, graph.weight.unwrap());
             }
 
             match &graph.deps {
                 Some(Deps::All(deps) | Deps::Xor(deps)) => {
                     for dep in deps {
-                        traverse(dep, graph.transparent, old_lives, new_lives, perms);
+                        traverse(dep, graph.transparent(), old_lives, new_lives, perms);
                     }
                 }
                 Some(Deps::Function(name, _)) => {

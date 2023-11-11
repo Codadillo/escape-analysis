@@ -77,7 +77,7 @@ impl LRA {
                     assert!(
                         sig.new_lives
                             .is_subset(&HashSet::from_iter([sig.graph.place])),
-                        "{sig:?}"
+                        "{sig:?} {cfg:?}"
                     );
                     if !(1..=args.len()).contains(&sig.graph.place) {
                         rename_map.insert(sig.graph.place, graphs[lv].place);
@@ -91,7 +91,7 @@ impl LRA {
             for graph in &mut graphs {
                 graph.meld(&reference);
             }
-
+        
             let live_ctrs = live.iter().map(|&l| graphs[l].flatten_to_ctrs(cfg)).fold(
                 vec![0; cfg.place_count],
                 |mut acc, ctr| {

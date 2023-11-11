@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{ast::Ident, cfg::Cfg};
 
 use super::{
-    deps::{DepGraph, Deps},
+    deps::{DepGraph, DepType, Deps},
     lra::Perm,
     recursion,
     signature::{ArgLives, ReturnLives, Signature},
@@ -77,7 +77,7 @@ impl Context {
                         place,
                         weight: Some(args.perms[&place]),
                         deps: None,
-                        transparent: false,
+                        dep_ty: DepType::Depend,
                     })
                     .collect();
 
@@ -86,7 +86,7 @@ impl Context {
                         place: 0,
                         weight: Some(Perm::Exclusive),
                         deps: Some(Deps::All(deps)),
-                        transparent: false,
+                        dep_ty: DepType::Depend,
                     },
                     &(1..=args.arg_count()).collect(),
                 ))
@@ -96,7 +96,7 @@ impl Context {
                     place: 0,
                     weight: Some(Perm::Exclusive),
                     deps: None,
-                    transparent: false,
+                    dep_ty: DepType::Depend,
                 },
                 &(1..=args.arg_count()).collect(),
             )),

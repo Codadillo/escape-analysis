@@ -29,6 +29,10 @@ fn main() {
     );
 
     for (name, cfg) in ctx.cfgs.clone() {
+        // if &name.0 == "factorial" {
+        //     continue
+        // }
+
         let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
         let ret = ctx.compute_sig(&name, &args).unwrap();
         println!("{name}: {:?} <- {cfg:?}", ret.perms);
@@ -37,13 +41,15 @@ fn main() {
 
     // println!("----------------");
 
-    // let cfg = ctx.cfgs.get(&"my_function".into()).unwrap().clone();
+    // let cfg = ctx.cfgs.get(&"factorial".into()).unwrap().clone();
     // println!("{cfg:?}");
     // let lra = LRA::analyze(
     //     &mut ctx,
     //     &cfg,
     //     &ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]),
     // );
+
+    // println!("{:?}", lra.)
 
     // for (i, g) in lra.dep_graphs.iter().enumerate() {
     //     println!("{i}: {:?}", g.flatten(&cfg));
