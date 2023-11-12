@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash};
+use std::{collections::{HashMap, HashSet}, fmt::Debug, hash::Hash};
 
 use crate::{
     ast::Ident,
@@ -61,6 +61,11 @@ impl<T> DepGraph<T> {
         }
     }
 
+    pub fn with_dep_ty(mut self, dep_ty: DepType) -> Self {
+        self.dep_ty = dep_ty;
+        self
+    }
+
     pub fn rename(self, map: &HashMap<usize, usize>) -> Self {
         Self {
             place: *map.get(&self.place).unwrap_or(&self.place),
@@ -78,7 +83,7 @@ impl<T> DepGraph<T> {
 }
 
 impl<T: Debug + Eq + Hash> DepGraph<T> {
-    pub fn squash(&mut self) {
+    pub fn squash(&mut self, old_lives: &HashSet<usize>) {
         if self.dep_ty == DepType::Transparent {
             self.dep_ty = DepType::TransparentLocked;
         }
@@ -86,7 +91,7 @@ impl<T: Debug + Eq + Hash> DepGraph<T> {
         match &mut self.deps {
             Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
                 for dep in &mut *deps {
-                    dep.squash();
+                    dep.squash(old_lives);
                 }
             }
             None => {}
@@ -99,8 +104,8 @@ impl<T: Debug + Eq + Hash> DepGraph<T> {
                 .enumerate()
                 .filter_map(|(i, dep)| {
                     classes.insert(
-                        match self.dep_ty {
-                            DepType::Depend => Ok(self.place),
+                        match dep.dep_ty {
+                            DepType::Depend if old_lives.contains(&dep.place) => Ok(dep.place),
                             _ => Err((&dep.weight, &dep.deps)),
                         },
                         i,
@@ -109,6 +114,7 @@ impl<T: Debug + Eq + Hash> DepGraph<T> {
                 .collect();
 
             for &i in extra_deps.iter().rev() {
+                println!("{:?}", deps[i]);
                 deps.remove(i);
             }
         };
@@ -151,29 +157,25 @@ impl<T: Clone + Debug> DepGraph<T> {
         }
 
         for stmnt in cfg.statements() {
-            let (p, deps) = match stmnt {
-                Statement::Assign(a) => (
-                    a.place,
-                    match &a.value {
-                        Value::Place(d) => Deps::All(vec![DepGraph::leaf(*d)]),
-                        Value::Call { func, args } => {
-                            Deps::Function(
-                                func.clone(),
-                                args.iter().copied().map(DepGraph::leaf).collect(),
-                            )
-                            // Deps::All(args.iter().copied().map(DepGraph::leaf).collect())
-                        }
-                    },
-                ),
+            let dep = match stmnt {
+                Statement::Assign(a) => match &a.value {
+                    Value::Place(d) => {
+                        DepGraph::weightless(a.place, Deps::All(vec![DepGraph::leaf(*d)]))
+                            .with_dep_ty(DepType::Transparent)
+                    }
+                    Value::Call { func, args } => DepGraph::weightless(
+                        a.place,
+                        Deps::Function(
+                            func.clone(),
+                            args.iter().copied().map(DepGraph::leaf).collect(),
+                        ),
+                    ),
+                },
                 Statement::Nop => continue,
             };
 
-            base_deps[p] = DepGraph {
-                place: p,
-                weight: None,
-                deps: Some(deps),
-                dep_ty: DepType::Depend,
-            };
+            let place = dep.place;
+            base_deps[place] = dep;
         }
 
         base_deps
@@ -210,14 +212,17 @@ impl<T: Clone + Debug> DepGraph<T> {
             None => {}
         }
 
-        out[self.place] += 1;
+        if self.dep_ty != DepType::TransparentLocked {
+            out[self.place] += 1;
+        }
+    
         out
     }
 
     pub fn meld(&mut self, reference: &Vec<DepGraph<T>>) {
         if let Some(Deps::All(deps) | Deps::Xor(deps)) = &mut self.deps {
             for dep in deps {
-                if self.dep_ty != DepType::TransparentLocked {
+                if dep.dep_ty != DepType::TransparentLocked {
                     *dep = reference[dep.place].clone();
                 }
 
@@ -274,7 +279,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn squash() {
+    fn test_squash() {
         let mut g = DepGraph {
             place: 0,
             weight: None::<()>,
@@ -285,7 +290,7 @@ mod test {
             dep_ty: DepType::Transparent,
         };
 
-        g.squash();
+        g.squash(&HashSet::new());
 
         assert_eq!(
             g,

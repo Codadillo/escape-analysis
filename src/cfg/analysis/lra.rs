@@ -65,7 +65,7 @@ impl LRA {
 
             // println!("{p:?}");
 
-            for &lv in live {            
+            for &lv in live {
                 if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
                     let mut arg_perms = BTreeMap::new();
                     let mut rename_map = HashMap::new();
@@ -88,7 +88,7 @@ impl LRA {
                     graphs[lv] = sig.graph.clone().rename(&rename_map);
                 }
             }
-    
+
             let reference = graphs.clone();
             for graph in &mut graphs {
                 graph.meld(&reference);
@@ -132,7 +132,7 @@ impl LRA {
         };
 
         let mut graph = graphs[ret_place].clone();
-        graph.squash();
+        graph.squash(&(1..=cfg.arg_count).collect());
 
         let ret = ReturnLives::new(graph, &(1..=cfg.arg_count).collect());
 
