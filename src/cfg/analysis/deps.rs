@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-};
+use std::{collections::HashMap, fmt::Debug, hash::Hash};
 
 use crate::{
     ast::Ident,
@@ -80,45 +77,46 @@ impl<T> DepGraph<T> {
     }
 }
 
-impl<T: Eq + std::hash::Hash> DepGraph<T> {
-    pub fn simplify(&mut self) {
-        match &mut self.deps {
-            Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
-                for dep in deps {
-                    dep.simplify();
-                }
-            }
-            None => {}
-        }
-
-        if let Some(Deps::Xor(deps)) = &mut self.deps {
-            let tmp = std::mem::take(deps);
-            *deps = tmp
-                .into_iter()
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect();
-        }
-    }
-
+impl<T: Debug + Eq + Hash> DepGraph<T> {
     pub fn squash(&mut self) {
-        self.simplify();
-
         if self.dep_ty == DepType::Transparent {
             self.dep_ty = DepType::TransparentLocked;
         }
 
         match &mut self.deps {
             Some(Deps::Xor(deps) | Deps::All(deps) | Deps::Function(_, deps)) => {
-                for dep in deps {
+                for dep in &mut *deps {
                     dep.squash();
                 }
             }
             None => {}
         }
 
+        if let Some(Deps::Xor(deps)) = &mut self.deps {
+            let mut classes = HashMap::new();
+            let extra_deps: Vec<_> = deps
+                .iter()
+                .enumerate()
+                .filter_map(|(i, dep)| {
+                    classes.insert(
+                        match self.dep_ty {
+                            DepType::Depend => Ok(self.place),
+                            _ => Err((&dep.weight, &dep.deps)),
+                        },
+                        i,
+                    )
+                })
+                .collect();
+
+            for &i in extra_deps.iter().rev() {
+                deps.remove(i);
+            }
+        };
+
         match &mut self.deps {
-            Some(Deps::Xor(deps)) if deps.len() == 1 && self.dep_ty != DepType::Depend => {
+            Some(Deps::Xor(deps) | Deps::All(deps))
+                if deps.len() == 1 && self.dep_ty != DepType::Depend =>
+            {
                 *self = deps.pop().unwrap();
             }
             _ => {}
@@ -268,5 +266,35 @@ impl<T: Debug> Debug for DepGraph<T> {
         }
 
         write!(f, " }}")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn squash() {
+        let mut g = DepGraph {
+            place: 0,
+            weight: None::<()>,
+            deps: Some(Deps::Xor(vec![
+                DepGraph::weightless(99, Deps::All(vec![DepGraph::leaf(3)])),
+                DepGraph::weightless(100, Deps::All(vec![DepGraph::leaf(3)])),
+            ])),
+            dep_ty: DepType::Transparent,
+        };
+
+        g.squash();
+
+        assert_eq!(
+            g,
+            DepGraph {
+                place: 0,
+                weight: None,
+                deps: Some(Deps::All(vec![DepGraph::leaf(3)])),
+                dep_ty: DepType::Depend,
+            },
+        )
     }
 }

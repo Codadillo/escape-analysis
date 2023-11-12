@@ -63,6 +63,8 @@ impl LRA {
                 continue;
             }
 
+            // println!("{p:?}");
+
             for &lv in live {            
                 if let Some(Deps::Function(name, args)) = &graphs[lv].deps {
                     let mut arg_perms = BTreeMap::new();
@@ -91,7 +93,7 @@ impl LRA {
             for graph in &mut graphs {
                 graph.meld(&reference);
             }
-        
+
             let live_ctrs = live.iter().map(|&l| graphs[l].flatten_to_ctrs(cfg)).fold(
                 vec![0; cfg.place_count],
                 |mut acc, ctr| {

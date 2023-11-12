@@ -4,7 +4,7 @@ use perm_mem::{
     cfg::{
         analysis::{
             context::Context,
-            lra::{Perm, LRA},
+            lra::Perm,
             signature::ArgLives,
         },
         Cfg,
@@ -29,12 +29,9 @@ fn main() {
     );
 
     for (name, cfg) in ctx.cfgs.clone() {
-        // if &name.0 == "factorial" {
-        //     continue
-        // }
-
         let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
         let ret = ctx.compute_sig(&name, &args).unwrap();
+        println!("******************");
         println!("{name}: {:?} <- {cfg:?}", ret.perms);
         println!("{:#?}", ret);
     }
