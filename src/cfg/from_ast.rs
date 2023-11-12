@@ -81,15 +81,17 @@ impl ConversionState {
         self.focus(if_block);
         let if_out = self.add_block(ifelse.iff);
         self.set_terminator(Terminator::Goto(end_bb));
+        let if_out_block = self.last_block;
 
         self.focus(else_block);
         let else_out = self.add_block(ifelse.elsee);
         self.set_terminator(Terminator::Goto(end_bb));
+        let else_out_block = self.last_block;
 
         self.focus(end_bb);
         self.add_phi(HashMap::from_iter([
-            (if_block, if_out),
-            (else_block, else_out),
+            (if_out_block, if_out),
+            (else_out_block, else_out),
         ]))
     }
 

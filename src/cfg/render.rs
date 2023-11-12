@@ -4,7 +4,7 @@ use super::{BasicBlock, Cfg, Statement, Terminator, Value};
 
 impl fmt::Debug for Cfg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Cfg",)?;
+        write!(f, "Cfg")?;
         fmt_arglist(f, 1..=self.arg_count)?;
         writeln!(f, ":")?;
 

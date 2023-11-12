@@ -49,8 +49,16 @@ impl LRA {
 
         let bb_order = cfg.bb_order();
         let mut sorted_plva: Vec<_> = plva.iter().collect();
-        sorted_plva
-            .sort_by_cached_key(|((b, s), _)| (bb_order.iter().find(|&a| a == b).unwrap(), s));
+        sorted_plva.sort_by_cached_key(|((b, s), _)| {
+            (
+                bb_order
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, a)| (a == b).then_some(i))
+                    .unwrap(),
+                s,
+            )
+        });
 
         let mut graphs = DepGraph::<Perm>::analyze(cfg);
 

@@ -28,6 +28,8 @@ fn main() {
             .map(|f| (f.name.clone(), Cfg::from_ast(f))),
     );
 
+    println!("{:#?}", ctx.cfgs);
+
     for (name, cfg) in ctx.cfgs.clone() {
         let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
         let ret = ctx.compute_sig(&name, &args).unwrap();

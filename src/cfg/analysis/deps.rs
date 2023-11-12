@@ -1,4 +1,8 @@
-use std::{collections::{HashMap, HashSet}, fmt::Debug, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 use crate::{
     ast::Ident,
@@ -98,6 +102,25 @@ impl<T: Debug + Eq + Hash> DepGraph<T> {
         }
 
         if let Some(Deps::Xor(deps)) = &mut self.deps {
+            let mut replaced_deps = vec![];
+            for (i, dep) in deps.iter().enumerate() {
+                if !dep.transparent() {
+                    continue;
+                }
+
+                if let Some(Deps::Xor(_)) = dep.deps {
+                    replaced_deps.push(i);
+                }
+            }
+
+            for replaced in replaced_deps.into_iter().rev() {
+                let Some(Deps::Xor(mut depdeps)) = deps.remove(replaced).deps else {
+                    unreachable!()
+                };
+
+                deps.append(&mut depdeps);
+            }
+
             let mut classes = HashMap::new();
             let extra_deps: Vec<_> = deps
                 .iter()
@@ -215,7 +238,7 @@ impl<T: Clone + Debug> DepGraph<T> {
         if self.dep_ty != DepType::TransparentLocked {
             out[self.place] += 1;
         }
-    
+
         out
     }
 
