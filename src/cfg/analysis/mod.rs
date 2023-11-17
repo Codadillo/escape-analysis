@@ -1,4 +1,5 @@
 pub mod deps;
+pub mod recursion;
 
 use std::collections::HashMap;
 
@@ -34,18 +35,26 @@ impl Context {
         self.fns.get(ident).map(|f| &f.cfg)
     }
 
+    pub fn set_depgraph(&mut self, ident: &Ident, deps: DepGraph) -> bool {
+        match self.fns.get_mut(ident) {
+            Some(f) => {
+                f.deps = Some(deps);
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub fn get_depgraph(&self, ident: &Ident) -> Option<&DepGraph> {
+        self.fns.get(ident)?.deps.as_ref()
+    }
+
     pub fn compute_depgraph(&mut self, ident: &Ident) -> Option<DepGraph> {
         let func = self.fns.get(ident)?;
         if let Some(deps) = &func.deps {
             return Some(deps.clone());
         }
 
-        let cfg = func.cfg.clone();
-        let mut deps = DepGraph::from_cfg(self, &cfg);
-        deps.simplify(&(1..=cfg.arg_count).collect::<Vec<_>>());
-
-        self.fns.get_mut(ident)?.deps = Some(deps.clone());
-
-        Some(deps)
+        Some(self.compute_recursive_depgraph(&func.cfg.clone()))
     }
 }

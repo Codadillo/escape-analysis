@@ -4,19 +4,19 @@ use crate::cfg::{Cfg, Statement, Terminator, Value};
 
 use super::Context;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DepGraph {
     pub nodes: Vec<Node>,
     pub new_lives: HashSet<usize>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Node {
     pub weight: (),
     pub deps: Deps,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Deps {
     All(Vec<usize>),
     Xor(Vec<usize>),
@@ -225,10 +225,11 @@ impl DepGraph {
         }
 
         // delete hanging xor nodes
-        let preds = self.predecessors();
+        let reachable: HashSet<_> = self.preorder().into_iter().collect();
         let mut remap: Vec<_> = (0..self.nodes.len()).collect();
+
         for i in (1..self.nodes.len()).rev() {
-            if !preds.contains_key(&i) {
+            if !reachable.contains(&i) {
                 self.nodes.remove(i);
                 self.new_lives.remove(&i);
 
