@@ -7,6 +7,7 @@ use super::Context;
 #[derive(Clone, Debug)]
 pub struct DepGraph {
     pub nodes: Vec<Node>,
+    pub new_lives: HashSet<usize>,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +49,7 @@ impl DepGraph {
     pub fn from_cfg(ctx: &mut Context, cfg: &Cfg) -> Self {
         let mut this = Self {
             nodes: vec![Node::leaf(()); cfg.place_count],
+            new_lives: HashSet::new(),
         };
         this.nodes[0].deps = Deps::Xor(vec![]);
 
@@ -85,6 +87,12 @@ impl DepGraph {
             }
         }
 
+        for (i, node) in this.nodes.iter().enumerate() {
+            if !(1..=cfg.arg_count).contains(&i) && !matches!(node.deps, Deps::Xor(_)) {
+                this.new_lives.insert(i);
+            }
+        }
+
         this
     }
 
@@ -115,6 +123,13 @@ impl DepGraph {
                 self.nodes[remap_place] = node;
             }
         }
+
+        self.new_lives.extend(
+            child_graph
+                .new_lives
+                .into_iter()
+                .map(|l| remap.get(&l).unwrap()),
+        );
     }
 
     fn remap_place(&mut self, place: usize, remap: &mut HashMap<usize, usize>) -> usize {
@@ -201,6 +216,10 @@ impl DepGraph {
         match &self.nodes[0].deps {
             Deps::Xor(deps) if deps.len() == 1 && !args.contains(&deps[0]) => {
                 self.nodes[0].deps = self.nodes[deps[0]].deps.clone();
+
+                if let Deps::All(_) = self.nodes[0].deps {
+                    self.new_lives.insert(0);
+                }
             }
             _ => {}
         }
@@ -211,6 +230,7 @@ impl DepGraph {
         for i in (1..self.nodes.len()).rev() {
             if !preds.contains_key(&i) {
                 self.nodes.remove(i);
+                self.new_lives.remove(&i);
 
                 for j in i..remap.len() {
                     remap[j] -= 1;
@@ -221,6 +241,8 @@ impl DepGraph {
         for dep in self.nodes.iter_mut().flat_map(|n| n.deps.get_mut()) {
             *dep = remap[*dep];
         }
+
+        self.new_lives = self.new_lives.iter().map(|&l| remap[l]).collect();
     }
 }
 
@@ -241,11 +263,36 @@ impl<'a> dot::Labeller<'a, Nd, Ed> for DepGraph {
             Deps::Xor(_) => format!("Xor(_{n})"),
         };
 
-        dot::LabelText::LabelStr(label.into())
+        dot::LabelText::html::<String>(label.into())
+    }
+
+    fn node_color(&self, node: &Nd) -> Option<dot::LabelText<'_>> {
+        if let Deps::Xor(_) = self.nodes[*node].deps {
+            return Some(dot::LabelText::LabelStr("grey".into()));
+        }
+
+        Some(match self.new_lives.contains(node) {
+            true => dot::LabelText::LabelStr("orange".into()),
+            false => dot::LabelText::LabelStr("green".into()),
+        })
     }
 
     fn edge_label<'b>(&self, _: &Ed) -> dot::LabelText<'_> {
         dot::LabelText::LabelStr("".into())
+    }
+
+    fn edge_style(&self, (a, _): &Ed) -> dot::Style {
+        match self.nodes[*a].deps {
+            Deps::Xor(_) => dot::Style::Dashed,
+            Deps::All(_) => dot::Style::None,
+        }
+    }
+
+    fn edge_color(&self, (a, _): &Ed) -> Option<dot::LabelText<'_>> {
+        Some(match self.nodes[*a].deps {
+            Deps::Xor(_) => dot::LabelText::LabelStr("grey".into()),
+            Deps::All(_) => dot::LabelText::LabelStr("black".into()),
+        })
     }
 }
 
