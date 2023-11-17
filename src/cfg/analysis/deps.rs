@@ -205,6 +205,20 @@ impl DepGraph {
             }
 
             // remove redundant children
+            let mut new_leaf_present = false;
+            for c in (0..tmp_deps.len()).rev() {
+                if !self.nodes[c].deps.get().is_empty() {
+                    continue;
+                }
+
+                if new_leaf_present {
+                    tmp_deps.remove(c);
+                    break;
+                }
+
+                new_leaf_present = true;
+            }
+
             *self.nodes[i].deps.get_mut() = tmp_deps
                 .into_iter()
                 .collect::<HashSet<_>>()
