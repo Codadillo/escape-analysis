@@ -1,19 +1,13 @@
-use std::{env, fs};
+use std::{env, fs, path::PathBuf};
 
 use perm_mem::{
-    cfg::{
-        analysis::{
-            context::Context,
-            lra::Perm,
-            signature::ArgLives,
-        },
-        Cfg,
-    },
+    cfg::{analysis::Context, Cfg},
     parser,
 };
 
 fn main() {
-    let input = fs::read_to_string(env::args().nth(1).unwrap()).unwrap();
+    let path = PathBuf::from(env::args().nth(1).unwrap());
+    let input = fs::read_to_string(&path).unwrap();
 
     let parser = parser::ModuleParser::new();
     let module = match parser.parse(&input) {
@@ -22,47 +16,21 @@ fn main() {
     };
 
     let mut ctx = Context::new();
-    ctx.cfgs.extend(
-        module
-            .into_iter()
-            .map(|f| (f.name.clone(), Cfg::from_ast(f))),
-    );
+    ctx.add_cfgs(module.into_iter().map(Cfg::from_ast));
 
-    println!("{:#?}", ctx.cfgs);
+    let names: Vec<_> = ctx.fns.iter().map(|(n, _)| n.clone()).collect();
+    for name in names {
+        println!("{name}: {:?}\n", ctx.get_cfg(&name).unwrap());
 
-    for (name, cfg) in ctx.cfgs.clone() {
-        let args = ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]);
-        let ret = ctx.compute_sig(&name, &args).unwrap();
-        println!("******************");
-        println!("{name}: {:?} <- {cfg:?}", ret.perms);
-        println!("{:#?}", ret);
+        let graph = ctx.compute_depgraph(&name).unwrap();
+        dot::render(
+            &graph,
+            &mut std::fs::File::create(&format!(
+                "renders/{}.{name}.dot",
+                path.file_name().unwrap().to_str().unwrap()
+            ))
+            .unwrap(),
+        )
+        .unwrap();
     }
-
-    // println!("----------------");
-
-    // let cfg = ctx.cfgs.get(&"factorial".into()).unwrap().clone();
-    // println!("{cfg:?}");
-    // let lra = LRA::analyze(
-    //     &mut ctx,
-    //     &cfg,
-    //     &ArgLives::from_direct(&vec![Perm::Exclusive; cfg.arg_count]),
-    // );
-
-    // println!("{:?}", lra.)
-
-    // for (i, g) in lra.dep_graphs.iter().enumerate() {
-    //     println!("{i}: {:?}", g.flatten(&cfg));
-    // }
-
-    // let mut plva: Vec<_> = lra.lva.point_lva(&cfg).into_iter().collect();
-    // plva.sort_by_key(|(i, _)| *i);
-    // for (p, lv) in plva {
-    //     println!("{p:?} <@ {lv:?}");
-    // }
-
-    // let mut plra: Vec<_> = lra.plra.iter().collect();
-    // plra.sort_by_key(|(i, _)| *i);
-    // for (p, lr) in plra {
-    //     println!("{p:?} <@ {lr:?}");
-    // }
 }

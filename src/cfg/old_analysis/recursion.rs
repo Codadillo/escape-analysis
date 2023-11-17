@@ -1,5 +1,5 @@
 use crate::cfg::{
-    analysis::{lra::LRA, signature::Signature},
+    old_analysis::{lra::LRA, signature::Signature},
     Assign, BasicBlock, Cfg, Statement, Value,
 };
 

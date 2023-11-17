@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::cfg::{
-    analysis::{
+    old_analysis::{
         deps::{add_ctrs, DepGraph},
         signature::ArgLives,
     },

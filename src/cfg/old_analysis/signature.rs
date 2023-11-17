@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use crate::cfg::analysis::deps::Deps;
+use crate::cfg::old_analysis::deps::Deps;
 
 use super::{deps::DepGraph, lra::Perm};
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dot = "0.1.4"
 lalrpop-util = { path = "lalrpop/lalrpop-util", features = ["lexer"] }
 
 [build-dependencies]
