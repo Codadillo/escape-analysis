@@ -205,13 +205,21 @@ impl DepGraph {
             _ => {}
         }
 
-        // detach hanging xor nodes
+        // delete hanging xor nodes
         let preds = self.predecessors();
-        let mut stack: Vec<_> = (0..self.nodes.len()).collect();
-        while let Some(i) = stack.pop() {
-            if i != 0 && !preds.contains_key(&i) {
-                stack.extend(std::mem::take(self.nodes[i].deps.get_mut()));
+        let mut remap: Vec<_> = (0..self.nodes.len()).collect();
+        for i in (1..self.nodes.len()).rev() {
+            if !preds.contains_key(&i) {
+                self.nodes.remove(i);
+
+                for j in i..remap.len() {
+                    remap[j] -= 1;
+                }
             }
+        }
+
+        for dep in self.nodes.iter_mut().flat_map(|n| n.deps.get_mut()) {
+            *dep = remap[*dep];
         }
     }
 }
