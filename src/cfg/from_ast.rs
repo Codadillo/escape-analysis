@@ -43,7 +43,11 @@ impl ConversionState {
     pub fn add_assign(&mut self, place: usize, value: Value) -> usize {
         self.cfg.basic_blocks[self.last_block]
             .stmnts
-            .push(Statement::Assign(Assign { place, value }));
+            .push(Statement::Assign(Assign {
+                place,
+                value,
+                allocate: false,
+            }));
         place
     }
 

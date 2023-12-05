@@ -33,8 +33,18 @@ impl fmt::Debug for BasicBlock {
         for stmnt in &self.stmnts {
             write!(f, "\t")?;
             match stmnt {
-                Statement::Assign(a) => write!(f, "let _{} = {:?}", a.place, a.value)?,
+                Statement::Assign(a) => {
+                    let prefix = match a.allocate {
+                        true => "allocate ",
+                        false => "",
+                    };
+
+                    write!(f, "let _{} = {prefix}{:?}", a.place, a.value)?
+                }
                 Statement::Nop => write!(f, "nop")?,
+                Statement::Deallocate(p) => write!(f, "deallocate {p:?}")?,
+                Statement::Dup(r) => write!(f, "dup+{} {}", r.count, r.place)?,
+                Statement::Drop(r) => write!(f, "drop-{} {}", r.count, r.place)?,
             }
             writeln!(f, ";")?;
         }

@@ -19,7 +19,7 @@ impl Context {
 
         let args = (1..=cfg.arg_count).collect::<Vec<_>>();
 
-        let mut deps = DepGraph::from_cfg(self, &no_recurse);
+        let mut deps = DepGraph::from_cfg(self, &no_recurse, false);
         deps.simplify(&args);
 
         if !recurses {
@@ -29,7 +29,7 @@ impl Context {
         for _ in 0..50 {
             self.set_depgraph(&cfg.name, deps);
 
-            let mut next = DepGraph::from_cfg(self, &cfg);
+            let mut next = DepGraph::from_cfg(self, &cfg, false);
             next.simplify(&args);
 
             if &next == self.get_depgraph(&cfg.name).unwrap() {
@@ -39,30 +39,15 @@ impl Context {
             deps = next;
         }
 
-        // We failed to converge, so start over with the returnee allocated
-        self.set_depgraph(&cfg.name, DepGraph::opaque());
+        // We failed to converge, so just allocate the return value
+        let mut opaque = DepGraph::opaque();
+        self.set_depgraph(&cfg.name, opaque.clone());
 
-        // let mut deps = DepGraph::from_cfg(self, &cfg);
-        // deps.simplify(&args);
-        // self.set_depgraph(&cfg.name, deps.clone());
+        let internal_deps = DepGraph::from_cfg(self, &cfg, true);
+        opaque.alloced_args = internal_deps.alloced_args;
 
-        DepGraph::opaque()
-    
-        // dot::render(
-        //     self.get_depgraph(&cfg.name).unwrap(),
-        //     &mut std::fs::File::create(&format!("renders/0convergence_failure.{}.dot", cfg.name))
-        //         .unwrap(),
-        // )
-        // .unwrap();
-
-        // dot::render(
-        //     &deps,
-        //     &mut std::fs::File::create(&format!("renders/1convergence_failure.{}.dot", cfg.name))
-        //         .unwrap(),
-        // )
-        // .unwrap();
-
-        // panic!("Could not converge");
+        self.set_depgraph(&cfg.name, opaque.clone());
+        opaque
     }
 }
 

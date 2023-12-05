@@ -14,6 +14,7 @@ pub enum Perm {
 pub struct DepGraph {
     pub nodes: Vec<Node>,
     pub new_lives: HashSet<usize>,
+    pub alloced_args: HashSet<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -33,6 +34,13 @@ impl Node {
         Self {
             weight,
             deps: Deps::All(vec![]),
+        }
+    }
+
+    pub fn allocated(&self) -> bool {
+        match self.weight {
+            Perm::Opaque => true,
+            Perm::Clear => false,
         }
     }
 }
@@ -56,16 +64,23 @@ impl DepGraph {
         Self {
             nodes: vec![Node::leaf(Perm::Opaque)],
             new_lives: HashSet::from_iter([0]),
+            alloced_args: HashSet::new(),
         }
     }
 
-    pub fn from_cfg(ctx: &mut Context, cfg: &Cfg) -> Self {
+    pub fn from_cfg(ctx: &mut Context, cfg: &Cfg, ret_alloced: bool) -> Self {
         let mut this = Self {
             nodes: vec![Node::leaf(Perm::Clear); cfg.place_count],
             new_lives: HashSet::new(),
+            alloced_args: HashSet::new(),
         };
-        this.nodes[0].deps = Deps::Xor(vec![]);
 
+        this.nodes[0].deps = Deps::Xor(vec![]);
+        if ret_alloced {
+            this.nodes[0].weight = Perm::Opaque;
+        }
+
+        // Add statements-induced dependencies
         for stmnt in cfg.statements() {
             match stmnt {
                 Statement::Assign(a) => match &a.value {
@@ -83,10 +98,14 @@ impl DepGraph {
                         }
                     },
                 },
-                Statement::Nop => {}
+                Statement::Nop
+                | Statement::Deallocate(_)
+                | Statement::Dup(_)
+                | Statement::Drop(_) => {}
             }
         }
 
+        // Add phi- and return- induced dependencies
         for bb in &cfg.basic_blocks {
             if let Some(Terminator::Return(place)) = bb.terminator {
                 let Deps::Xor(deps) = &mut this.nodes[0].deps else {
@@ -100,9 +119,27 @@ impl DepGraph {
             }
         }
 
+        // propogate allocations
+        for c in this.preorder_all() {
+            if this.nodes[c].allocated() {
+                for dep in this.nodes[c].deps.get().clone() {
+                    this.nodes[dep].weight = Perm::Opaque;
+                }
+            }
+        }
+
+        // populate new lives and alloced args
         for (i, node) in this.nodes.iter().enumerate() {
-            if !(1..=cfg.arg_count).contains(&i) && !matches!(node.deps, Deps::Xor(_)) {
+            let is_arg = (1..=cfg.arg_count).contains(&i);
+
+            // if it's not an argument or a xor, its new
+            if !is_arg && !matches!(node.deps, Deps::Xor(_)) {
                 this.new_lives.insert(i);
+            }
+
+            // if it is an arg and allocated, its an alloced arg
+            if is_arg && node.allocated() {
+                this.alloced_args.insert(i);
             }
         }
 
@@ -137,6 +174,11 @@ impl DepGraph {
             }
         }
 
+        for arg in child_graph.alloced_args {
+            let remap_arg = self.remap_place(arg, &mut remap);
+            self.nodes[remap_arg].weight = Perm::Opaque;
+        }
+
         self.new_lives.extend(
             child_graph
                 .new_lives
@@ -152,8 +194,23 @@ impl DepGraph {
         })
     }
 
+    // Does not include unreachable nodes
     pub fn preorder(&self) -> Vec<usize> {
-        let mut ordering = vec![0];
+        self.preorder_inner(vec![0])
+    }
+
+    // Includes unreachable nodes
+    pub fn preorder_all(&self) -> Vec<usize> {
+        let preds = self.predecessors();
+        self.preorder_inner(
+            (0..self.nodes.len())
+                .filter(|n| !preds.contains_key(n))
+                .collect(),
+        )
+    }
+
+    fn preorder_inner(&self, start: Vec<usize>) -> Vec<usize> {
+        let mut ordering = start;
         let mut cursor = 0;
 
         while cursor != ordering.len() {
@@ -274,6 +331,32 @@ impl DepGraph {
 
         self.new_lives = self.new_lives.iter().map(|&l| remap[l]).collect();
     }
+
+    pub fn flatten_to_counters(&self, nodes: impl IntoIterator<Item = usize>) -> Vec<usize> {
+        let mut out = vec![0; self.nodes.len()];
+
+        for node in nodes {
+            out[node] += 1;
+
+            match &self.nodes[node].deps {
+                Deps::All(deps) => {
+                    let ctrs = self.flatten_to_counters(deps.iter().copied());
+                    for (o, a) in out.iter_mut().zip(ctrs) {
+                        *o += a;
+                    }
+                }
+
+                Deps::Xor(deps) => {
+                    let ctrs = self.flatten_to_counters(deps.iter().copied());
+                    for (o, a) in out.iter_mut().zip(ctrs) {
+                        *o = a.max(*o);
+                    }
+                }
+            }
+        }
+
+        out
+    }
 }
 
 type Nd = usize;
@@ -307,7 +390,7 @@ impl<'a> dot::Labeller<'a, Nd, Ed> for DepGraph {
         if let Deps::Xor(_) = self.nodes[*node].deps {
             return Some(dot::LabelText::LabelStr("grey".into()));
         }
-    
+
         Some(match self.new_lives.contains(node) {
             true => dot::LabelText::LabelStr("orange".into()),
             false => dot::LabelText::LabelStr("green".into()),

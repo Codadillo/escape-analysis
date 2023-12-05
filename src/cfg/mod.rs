@@ -1,5 +1,6 @@
 pub mod analysis;
 pub mod from_ast;
+pub mod mem_manage;
 pub mod render;
 
 use std::collections::HashMap;
@@ -25,7 +26,16 @@ pub struct BasicBlock {
 #[derive(Clone)]
 pub enum Statement {
     Assign(Assign),
+    Deallocate(usize),
+    Dup(RefCount),
+    Drop(RefCount),
     Nop,
+}
+
+#[derive(Clone)]
+pub struct RefCount {
+    pub place: usize,
+    pub count: usize,
 }
 
 #[derive(Clone)]
@@ -38,6 +48,7 @@ pub struct Phi {
 pub struct Assign {
     pub place: usize,
     pub value: Value,
+    pub allocate: bool,
 }
 
 #[derive(Clone)]
@@ -145,5 +156,11 @@ impl Cfg {
         }
 
         pred_map
+    }
+}
+
+impl RefCount {
+    pub fn one(place: usize) -> Self {
+        Self { place, count: 1 }
     }
 }
