@@ -23,13 +23,13 @@ fn main() {
         let mut cfg = ctx.get_cfg(&name).unwrap().clone();
         // println!("{name}: {:?}\n", cfg);
 
-        println!("{:?}", DepGraph::from_cfg(&mut ctx, &cfg, true));
+        // println!("{:?}", DepGraph::from_cfg(&mut ctx, &cfg, true));
 
         mem_manage::insert_management(&mut ctx, &mut cfg);
         println!("{name}: {:?}\n", cfg);
 
-        let graph = ctx.compute_depgraph(&name).unwrap();
-        println!("{graph:?}");
+        // let graph = ctx.compute_depgraph(&name).unwrap();
+        // println!("{graph:?}");
     
         // dot::render(
         //     &graph,
