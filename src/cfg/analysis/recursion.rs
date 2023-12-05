@@ -39,21 +39,30 @@ impl Context {
             deps = next;
         }
 
-        dot::render(
-            self.get_depgraph(&cfg.name).unwrap(),
-            &mut std::fs::File::create(&format!("renders/0convergence_failure.{}.dot", cfg.name))
-                .unwrap(),
-        )
-        .unwrap();
+        // We failed to converge, so start over with the returnee allocated
+        self.set_depgraph(&cfg.name, DepGraph::opaque());
 
-        dot::render(
-            &deps,
-            &mut std::fs::File::create(&format!("renders/1convergence_failure.{}.dot", cfg.name))
-                .unwrap(),
-        )
-        .unwrap();
+        let mut deps = DepGraph::from_cfg(self, &cfg);
+        deps.simplify(&args);
+        self.set_depgraph(&cfg.name, deps.clone());
 
-        panic!("Could not converge");
+        deps
+    
+        // dot::render(
+        //     self.get_depgraph(&cfg.name).unwrap(),
+        //     &mut std::fs::File::create(&format!("renders/0convergence_failure.{}.dot", cfg.name))
+        //         .unwrap(),
+        // )
+        // .unwrap();
+
+        // dot::render(
+        //     &deps,
+        //     &mut std::fs::File::create(&format!("renders/1convergence_failure.{}.dot", cfg.name))
+        //         .unwrap(),
+        // )
+        // .unwrap();
+
+        // panic!("Could not converge");
     }
 }
 

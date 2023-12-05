@@ -5,6 +5,12 @@ use crate::cfg::{Cfg, Statement, Terminator, Value};
 use super::Context;
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Perm {
+    Opaque,
+    Clear,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct DepGraph {
     pub nodes: Vec<Node>,
     pub new_lives: HashSet<usize>,
@@ -12,7 +18,7 @@ pub struct DepGraph {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node {
-    pub weight: (),
+    pub weight: Perm,
     pub deps: Deps,
 }
 
@@ -23,7 +29,7 @@ pub enum Deps {
 }
 
 impl Node {
-    pub fn leaf(weight: ()) -> Self {
+    pub fn leaf(weight: Perm) -> Self {
         Self {
             weight,
             deps: Deps::All(vec![]),
@@ -46,9 +52,16 @@ impl Deps {
 }
 
 impl DepGraph {
+    pub fn opaque() -> Self {
+        Self {
+            nodes: vec![Node::leaf(Perm::Opaque)],
+            new_lives: HashSet::from_iter([0]),
+        }
+    }
+
     pub fn from_cfg(ctx: &mut Context, cfg: &Cfg) -> Self {
         let mut this = Self {
-            nodes: vec![Node::leaf(()); cfg.place_count],
+            nodes: vec![Node::leaf(Perm::Clear); cfg.place_count],
             new_lives: HashSet::new(),
         };
         this.nodes[0].deps = Deps::Xor(vec![]);
@@ -134,7 +147,7 @@ impl DepGraph {
 
     fn remap_place(&mut self, place: usize, remap: &mut HashMap<usize, usize>) -> usize {
         *remap.entry(place).or_insert_with(|| {
-            self.nodes.push(Node::leaf(()));
+            self.nodes.push(Node::leaf(Perm::Clear));
             self.nodes.len() - 1
         })
     }
@@ -274,7 +287,7 @@ impl<'a> dot::Labeller<'a, Nd, Ed> for DepGraph {
         dot::Id::new(format!("N{}", n)).unwrap()
     }
 
-    fn node_label<'b>(&self, n: &Nd) -> dot::LabelText<'_> {
+    fn node_label(&self, n: &Nd) -> dot::LabelText<'_> {
         let label = match self.nodes[*n].deps {
             Deps::All(_) => format!("_{n}"),
             Deps::Xor(_) => format!("Xor(_{n})"),
@@ -283,11 +296,18 @@ impl<'a> dot::Labeller<'a, Nd, Ed> for DepGraph {
         dot::LabelText::html::<String>(label.into())
     }
 
+    fn node_style(&self, n: &Nd) -> dot::Style {
+        match self.nodes[*n].weight {
+            Perm::Opaque => dot::Style::Filled,
+            Perm::Clear => dot::Style::None,
+        }
+    }
+
     fn node_color(&self, node: &Nd) -> Option<dot::LabelText<'_>> {
         if let Deps::Xor(_) = self.nodes[*node].deps {
             return Some(dot::LabelText::LabelStr("grey".into()));
         }
-
+    
         Some(match self.new_lives.contains(node) {
             true => dot::LabelText::LabelStr("orange".into()),
             false => dot::LabelText::LabelStr("green".into()),
