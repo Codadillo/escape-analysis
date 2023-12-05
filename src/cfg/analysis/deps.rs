@@ -181,7 +181,7 @@ impl DepGraph {
                 self.nodes[i].deps.get_mut()[j] = grandchild;
             }
 
-            // now do simplifcations that only work on xor
+            // now do simplifications that only work on xor
             let Deps::Xor(deps) = &mut self.nodes[i].deps else {
                 continue;
             };
@@ -207,7 +207,9 @@ impl DepGraph {
             // remove redundant children
             let mut new_leaf_present = false;
             for c in (0..tmp_deps.len()).rev() {
-                if !self.nodes[c].deps.get().is_empty() {
+                let child = tmp_deps[c];
+
+                if !self.nodes[child].deps.get().is_empty() || args.contains(&child) {
                     continue;
                 }
 
@@ -239,7 +241,7 @@ impl DepGraph {
         }
 
         // delete hanging xor nodes
-        let reachable: HashSet<_> = self.preorder().into_iter().collect();
+        let reachable: HashSet<_> = args.iter().copied().chain(self.preorder()).collect();
         let mut remap: Vec<_> = (0..self.nodes.len()).collect();
 
         for i in (1..self.nodes.len()).rev() {

@@ -17,10 +17,11 @@ impl Context {
             }
         }
 
-        let args = (0..=cfg.arg_count).collect::<Vec<_>>();
+        let args = (1..=cfg.arg_count).collect::<Vec<_>>();
 
         let mut deps = DepGraph::from_cfg(self, &no_recurse);
         deps.simplify(&args);
+
         if !recurses {
             return deps;
         }
