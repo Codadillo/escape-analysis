@@ -40,13 +40,9 @@ impl Context {
         }
 
         // We failed to converge, so start over with the returnee allocated
-        self.set_depgraph(&cfg.name, DepGraph::opaque());
-
-        let mut deps = DepGraph::from_cfg(self, &cfg);
-        deps.simplify(&args);
-        self.set_depgraph(&cfg.name, deps.clone());
-
-        deps
+        let opaque = DepGraph::opaque();
+        self.set_depgraph(&cfg.name, opaque.clone());
+        opaque
     
         // dot::render(
         //     self.get_depgraph(&cfg.name).unwrap(),
