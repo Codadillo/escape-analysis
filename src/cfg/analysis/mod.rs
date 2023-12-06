@@ -7,10 +7,11 @@ use std::collections::HashMap;
 use self::deps::DepGraph;
 
 use super::Cfg;
-use crate::ast::Ident;
+use crate::{ast::Ident, types::Type};
 
 pub struct Context {
     pub fns: HashMap<Ident, Function>,
+    pub type_map: HashMap<String, Type>,
 }
 
 pub struct Function {
@@ -22,6 +23,7 @@ impl Context {
     pub fn new() -> Self {
         Self {
             fns: HashMap::new(),
+            type_map: HashMap::new(),
         }
     }
 

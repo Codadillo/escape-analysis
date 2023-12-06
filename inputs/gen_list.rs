@@ -1,7 +1,9 @@
-fn generate(condition) {
+type List = [() | ((), List)];
+
+fn generate(condition: ()) -> List {
     if condition {
-        tuple()
+        List(tuple())
     } else {
-        tuple(tuple(), generate(condition))
+        List(tuple(tuple(), generate(condition)))
     }
 }

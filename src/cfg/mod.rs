@@ -69,7 +69,7 @@ pub enum Terminator {
 }
 
 impl Cfg {
-    pub fn from_ast(func: ast::Function, type_map: HashMap<ast::Ident, Type>) -> Self {
+    pub fn from_ast(func: ast::Function, type_map: HashMap<String, Type>) -> Self {
         ConversionState::from_ast(func, type_map)
     }
 

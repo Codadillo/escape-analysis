@@ -1,6 +1,12 @@
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::types::Type;
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub ty_defs: HashMap<String, Type>,
+    pub fns: Vec<Function>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
@@ -61,5 +67,17 @@ impl<S: Into<String>> From<S> for Ident {
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Module {
+    pub fn enum_constructors(&self) -> HashMap<String, Type> {
+        self.ty_defs
+            .iter()
+            .filter_map(|(name, ty)| match ty {
+                Type::Enum(_) => Some((name.clone(), ty.clone())),
+                _ => None,
+            })
+            .collect()
     }
 }

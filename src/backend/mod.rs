@@ -1,13 +1,24 @@
-use std::{fs, io, io::Write, path::Path};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    fs,
+    hash::{Hash, Hasher},
+    io,
+    io::Write,
+    path::Path,
+};
 
-use crate::cfg::{Cfg, Statement, Terminator, Value};
+use crate::{
+    cfg::{Cfg, Statement, Terminator, Value},
+    types::Type,
+};
 
 const MAKEFILE: &str = include_str!("Makefile");
 const STD_BASE: &str = include_str!("std_base.c");
 
-pub fn compile_cfgs_to_dir<'a>(
+pub fn compile_module_to_dir<'a>(
     dir: impl AsRef<Path>,
     cfgs: impl IntoIterator<Item = &'a Cfg>,
+    type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
     // Create the build directorya
     let dir = dir.as_ref();
@@ -18,9 +29,12 @@ pub fn compile_cfgs_to_dir<'a>(
     let mut header_file = fs::File::create(dir.join("program.h"))?;
     writeln!(program_file, "#include \"std.c\"")?;
     writeln!(program_file, "#include \"program.h\"\n")?;
+    writeln!(program_file, "#include \"types.h\"\n")?;
 
+    let mut used_types = vec![];
     for cfg in cfgs {
-        compile_cfg_to_c(&mut program_file, &mut header_file, cfg)?;
+        used_types.extend(&cfg.place_tys);
+        compile_cfg(&mut program_file, &mut header_file, cfg)?;
     }
 
     // Write the Makefile
@@ -30,10 +44,121 @@ pub fn compile_cfgs_to_dir<'a>(
     let std_file = fs::File::create(dir.join("std.c"))?;
     write_std_lib(std_file)?;
 
+    // Write the types
+    let type_file = fs::File::create(dir.join("types.h"))?;
+    compile_tys(type_file, used_types, type_map, type_map)?;
+
     Ok(())
 }
 
-pub fn compile_cfg_to_c(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg) -> io::Result<()> {
+pub fn compile_tys<'a>(
+    mut h: impl io::Write,
+    anon_tys: impl IntoIterator<Item = &'a Type>,
+    named_tys: impl IntoIterator<Item = (&'a String, &'a Type)>,
+    type_map: &HashMap<String, Type>,
+) -> io::Result<HashMap<Type, String>> {
+    let mut remap = HashMap::new();
+
+    // Create the types
+    for anon_ty in anon_tys {
+        compile_ty(&mut h, anon_ty, &mut remap, type_map)?;
+    }
+    for (name, ty) in named_tys {
+        compile_ty(&mut h, ty, &mut remap, type_map)?;
+
+        // Create the constructor
+        if let Type::Enum(_) = ty {
+            // let c_name = type_name(ty, type_map);
+            // writeln!(h, "struct {c_name} *P_{name}(int disc, void *inner) {{",)?;
+            // writeln!(
+            //     h,
+            //     "return (struct {c_name}) {{ .disc = disc, .inner = inner }}"
+            // )?;
+            // writeln!(h, "}}")?;
+
+            writeln!(h, "void *P_{name}(void *inner) {{ return (void *) 0; }}")?;
+        }
+    }
+
+    Ok(remap)
+}
+
+pub fn compile_ty(
+    h: &mut impl io::Write,
+    ty: &Type,
+    remap: &mut HashMap<Type, String>,
+    type_map: &HashMap<String, Type>,
+) -> io::Result<()> {
+    if let Some(_) = remap.get(ty) {
+        return Ok(());
+    }
+
+    match ty {
+        Type::Tuple(t) => {
+            let name = type_name(ty, type_map);
+            remap.insert(ty.clone(), name.clone());
+
+            for elem in &t.elems {
+                compile_ty(h, elem, remap, type_map)?;
+            }
+
+            writeln!(h, "// {ty:?}")?;
+            writeln!(h, "struct {name} {{")?;
+            for (i, elem) in t.elems.iter().enumerate() {
+                writeln!(h, "struct {} *e{i};", type_name(elem, type_map))?;
+            }
+            writeln!(h, "}};\n")?;
+        }
+        Type::Enum(e) => {
+            let name = type_name(ty, type_map);
+            remap.insert(ty.clone(), name.clone());
+
+            for variant in &e.variants {
+                compile_ty(h, variant, remap, type_map)?;
+            }
+
+            writeln!(h, "// {ty:?}")?;
+            writeln!(h, "struct {name} {{")?;
+            writeln!(h, "int disc;")?;
+            writeln!(h, "union {{")?;
+
+            for (i, variant) in e.variants.iter().enumerate() {
+                writeln!(h, "struct {} v{i};", type_name(variant, type_map))?;
+            }
+
+            writeln!(h, "}} *inner;")?;
+            writeln!(h, "}};\n")?;
+        }
+        Type::Named(n) => {
+            let aliased_ty = type_map.get(n).unwrap();
+            compile_ty(h, aliased_ty, remap, type_map)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn type_name(ty: &Type, type_map: &HashMap<String, Type>) -> String {
+    use convert_base::Convert;
+
+    const ID_CHARS: &[u8] =
+        "QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm1234567890_".as_bytes();
+
+    if let Type::Named(n) = ty {
+        return type_name(type_map.get(n).unwrap(), type_map);
+    }
+
+    let mut h = DefaultHasher::new();
+    ty.hash(&mut h);
+
+    let encoded = Convert::new(64, ID_CHARS.len() as u64).convert::<u64, u8>(&[h.finish()]);
+    let encoded_str: String =
+        String::from_utf8(encoded.into_iter().map(|i| ID_CHARS[i as usize]).collect()).unwrap();
+
+    format!("ty_{encoded_str}")
+}
+
+pub fn compile_cfg(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg) -> io::Result<()> {
     write!(c, "void *P_{}(", cfg.name)?;
     write!(h, "void *P_{}(", cfg.name)?;
     for arg in 1..=cfg.arg_count {

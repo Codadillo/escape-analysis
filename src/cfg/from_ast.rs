@@ -9,13 +9,13 @@ use crate::{
 
 pub struct ConversionState {
     pub cfg: Cfg,
-    pub type_map: HashMap<ast::Ident, Type>,
+    pub type_map: HashMap<String, Type>,
     pub scopes: Vec<HashMap<ast::Ident, usize>>,
     pub last_block: usize,
 }
 
 impl ConversionState {
-    pub fn from_ast(func: ast::Function, type_map: HashMap<ast::Ident, Type>) -> Cfg {
+    pub fn from_ast(func: ast::Function, type_map: HashMap<String, Type>) -> Cfg {
         let mut this = ConversionState {
             cfg: Cfg::with_args(
                 func.name,
@@ -179,6 +179,6 @@ impl ConversionState {
             _ => {}
         }
 
-        self.type_map.get(id).cloned()
+        self.type_map.get(&id.0).cloned()
     }
 }

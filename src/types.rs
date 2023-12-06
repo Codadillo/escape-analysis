@@ -1,17 +1,18 @@
 use std::fmt;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Tuple(Tuple),
     Enum(Enum),
+    Named(String),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Tuple {
     pub elems: Vec<Type>,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Enum {
     pub variants: Vec<Type>,
 }
@@ -27,6 +28,7 @@ impl fmt::Debug for Type {
         match self {
             Self::Tuple(t) => write!(f, "{t:?}"),
             Self::Enum(e) => write!(f, "{e:?}"),
+            Self::Named(n) => write!(f, "{n}"),
         }
     }
 }

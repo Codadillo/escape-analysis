@@ -1,7 +1,7 @@
-use std::{collections::HashMap, env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use perm_mem::{
-    backend::compile_cfgs_to_dir,
+    backend::compile_module_to_dir,
     cfg::{analysis::Context, mem_manage, Cfg},
     parser,
 };
@@ -16,17 +16,22 @@ fn main() {
         Err(e) => panic!("{e}"),
     };
 
-    let type_map: HashMap<_, _> = module
-        .iter()
-        .map(|f| (f.name.clone(), f.ret_ty.clone()))
-        .collect();
+    let mut type_map = module.ty_defs;
+    type_map.extend(
+        module
+            .fns
+            .iter()
+            .map(|f| (f.name.0.clone(), f.ret_ty.clone())),
+    );
 
     let mut ctx = Context::new();
     ctx.add_cfgs(
         module
+            .fns
             .into_iter()
             .map(|f| Cfg::from_ast(f, type_map.clone())),
     );
+    ctx.type_map = type_map;
 
     let names: Vec<_> = ctx.fns.iter().map(|(n, _)| n.clone()).collect();
     let mut managed_cfgs = vec![];
@@ -54,5 +59,5 @@ fn main() {
         // .unwrap();
     }
 
-    compile_cfgs_to_dir("build", &managed_cfgs).unwrap();
+    compile_module_to_dir("build", &managed_cfgs, &ctx.type_map).unwrap();
 }

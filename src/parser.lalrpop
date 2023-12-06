@@ -15,20 +15,14 @@ List<T, S>: Vec<T> = {
 
 ListTerminated<T, S>: Vec<T> = <(<T> S)*> => <>;
 
-pub Module: Vec<Function> = <(<Function>)*> => <>;
+pub Module: Module = <ty_defs:(<TypeDef>)*> <fns:(<Function>)*> => Module {
+    fns,
+    ty_defs: ty_defs.into_iter().collect()
+};
 
 pub Function: Function = "fn" <name:Ident> "(" <args:List<Arg, ",">> ")" "->" <ret_ty:Type> <body:Block> => Function {<>};
 
 Arg: Arg = <name:Ident> ":" <ty:Type> => Arg {<>};
-
-Type: Type = {
-    Tuple => Type::Tuple(<>),
-    Enum => Type::Enum(<>)
-}
-
-Tuple: Tuple = "(" <elems:List<Type, ",">> ")" => Tuple {<>};
-
-Enum: Enum = "[" <variants:List<Type, ",">> "]" => Enum {<>};
 
 Expr: Expr = {
     "(" <Expr> ")",
@@ -47,3 +41,15 @@ Block: Block = "{" <stmnts:ListTerminated<Statement, ";">> <ret:Expr> "}" => Blo
 IfElse: IfElse = "if" <cond:Expr> <iff:Block> "else" <elsee:Block> => IfElse {<>};
 
 Statement: Statement = "let" <ident:Ident> "=" <value:Expr> => Statement {<>};
+
+TypeDef: (String, Type) = "type" <name:Ident> "=" <ty:Type> ";" => (name.0, ty);
+
+Type: Type = {
+    Tuple => Type::Tuple(<>),
+    Enum => Type::Enum(<>),
+    <i:Ident> => Type::Named(i.0)
+}
+
+Tuple: Tuple = "(" <elems:List<Type, ",">> ")" => Tuple {<>};
+
+Enum: Enum = "[" <variants:List<Type, "|">> "]" => Enum {<>};
