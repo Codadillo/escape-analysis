@@ -1,7 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
 use perm_mem::{
-    cfg::{analysis::Context, Cfg, mem_manage},
+    backend::compile_cfgs_to_dir,
+    cfg::{analysis::Context, mem_manage, Cfg},
     parser,
 };
 
@@ -19,6 +20,7 @@ fn main() {
     ctx.add_cfgs(module.into_iter().map(Cfg::from_ast));
 
     let names: Vec<_> = ctx.fns.iter().map(|(n, _)| n.clone()).collect();
+    let mut managed_cfgs = vec![];
     for name in names {
         let mut cfg = ctx.get_cfg(&name).unwrap().clone();
         // println!("{name}: {:?}\n", cfg);
@@ -27,10 +29,11 @@ fn main() {
 
         mem_manage::insert_management(&mut ctx, &mut cfg);
         println!("{name}: {:?}\n", cfg);
+        managed_cfgs.push(cfg);
 
         // let graph = ctx.compute_depgraph(&name).unwrap();
         // println!("{graph:?}");
-    
+
         // dot::render(
         //     &graph,
         //     &mut std::fs::File::create(&format!(
@@ -41,4 +44,6 @@ fn main() {
         // )
         // .unwrap();
     }
+
+    compile_cfgs_to_dir("build", &managed_cfgs).unwrap();
 }

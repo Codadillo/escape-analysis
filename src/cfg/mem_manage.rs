@@ -5,6 +5,12 @@ use super::{
     Cfg, RefCount, Statement, Value,
 };
 
+// todo: we should monomorphize over whether the result of a function needs to be allocated
+// (alternatively, whether or not a field of a struct is stored inline can be used)
+//
+// e.g. inputs/allocated_args stores a tuple with stack-allocated members into a dynamically 
+// allocated list using the my_tuple function
+
 pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
     // compute the depgraph for the cfg
     let alloced_return = ctx.compute_depgraph(&cfg.name).unwrap().nodes[0].allocated();

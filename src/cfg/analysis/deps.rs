@@ -91,7 +91,7 @@ impl DepGraph {
                         "tuple" => {
                             this.nodes[a.place].deps = Deps::All(args.clone());
                         }
-                        "invent" => {}
+                        "invent" | "print" => {}
                         _ => {
                             let fdeps = ctx.compute_depgraph(func).unwrap();
                             this.merge_in(a.place, args, ctx.get_cfg(func).unwrap(), fdeps);
