@@ -120,20 +120,12 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
 
         // If any successors do not have a variable in their live ref in
         // that's in this block's live ref out, drop it on entry
-        let live_out = &lva.blocks[b].live_out;
-        let live_ctrs_out = deps.flatten_to_counters_ignorant(live_out.iter().copied());
-        let live_ref_out: HashSet<_> = (0..deps.nodes.len())
-            .filter(|n| deps.nodes[*n].allocated())
-            .filter(|n| live_ctrs_out[*n] != 0 || live_out.contains(n))
-            .collect();
-
+        let live_ref_out = live_refs(&deps, &lva.blocks[b].live_out);
         for succ in cfg.successors(b) {
-            let live_in = &lva.blocks[succ].live_in;
-            let live_ctrs_in = deps.flatten_to_counters_ignorant(live_in.iter().copied());
-            let live_ref_in: HashSet<_> = (0..deps.nodes.len())
-                .filter(|n| deps.nodes[*n].allocated())
-                .filter(|n| live_ctrs_in[*n] != 0 || live_in.contains(n))
-                .collect();
+            let mut live_in = lva.blocks[succ].live_in.clone();
+            live_in.extend(cfg.basic_blocks[succ].phi_used_vars());
+
+            let live_ref_in = live_refs(&deps, &live_in);
 
             for dead in live_ref_out.difference(&live_ref_in) {
                 cfg.basic_blocks[succ]
@@ -142,4 +134,12 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
             }
         }
     }
+}
+
+fn live_refs(deps: &DepGraph, lva: &HashSet<usize>) -> HashSet<usize> {
+    let live_ctrs = deps.flatten_to_counters_ignorant(lva.iter().copied());
+    (0..deps.nodes.len())
+        .filter(|n| deps.nodes[*n].allocated())
+        .filter(|n| live_ctrs[*n] != 0 || lva.contains(n))
+        .collect()
 }

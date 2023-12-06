@@ -164,3 +164,10 @@ impl RefCount {
         Self { place, count: 1 }
     }
 }
+
+impl BasicBlock {
+    // this iterator can produce the same place multiple times
+    pub fn phi_used_vars(&self) -> impl Iterator<Item = &usize> {
+        self.phi.iter().flat_map(|phi| phi.opts.values())
+    }
+}
