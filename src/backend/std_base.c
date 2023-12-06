@@ -1,3 +1,9 @@
+#include "types.h"
+
+unit invent() {
+    return (unit) {};
+}
+
 void *allocate(void *ptr) {
     return (void *) 0;
 }
@@ -10,3 +16,6 @@ void dup(void *ptr, int count) {
 
 void drop(void *ptr, int count) {
 }
+
+
+

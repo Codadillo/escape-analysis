@@ -30,11 +30,12 @@ pub fn compile_module_to_dir<'a>(
     writeln!(program_file, "#include \"std.c\"")?;
     writeln!(program_file, "#include \"program.h\"\n")?;
     writeln!(program_file, "#include \"types.h\"\n")?;
+    writeln!(header_file, "#include \"types.h\"\n")?;
 
     let mut used_types = vec![];
     for cfg in cfgs {
         used_types.extend(&cfg.place_tys);
-        compile_cfg(&mut program_file, &mut header_file, cfg)?;
+        compile_cfg(&mut program_file, &mut header_file, cfg, type_map)?;
     }
 
     // Write the Makefile
@@ -45,8 +46,14 @@ pub fn compile_module_to_dir<'a>(
     write_std_lib(std_file)?;
 
     // Write the types
-    let type_file = fs::File::create(dir.join("types.h"))?;
-    compile_tys(type_file, used_types, type_map, type_map)?;
+    let mut type_file = fs::File::create(dir.join("types.h"))?;
+    writeln!(&mut type_file, "#pragma once\n")?;
+    compile_tys(&mut type_file, used_types, type_map, type_map)?;
+    writeln!(
+        &mut type_file,
+        "typedef struct {} unit;",
+        type_name(&Type::unit(), type_map)
+    )?;
 
     Ok(())
 }
@@ -158,12 +165,19 @@ fn type_name(ty: &Type, type_map: &HashMap<String, Type>) -> String {
     format!("ty_{encoded_str}")
 }
 
-pub fn compile_cfg(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg) -> io::Result<()> {
-    write!(c, "void *P_{}(", cfg.name)?;
-    write!(h, "void *P_{}(", cfg.name)?;
+pub fn compile_cfg(
+    mut c: impl io::Write,
+    mut h: impl io::Write,
+    cfg: &Cfg,
+    type_map: &HashMap<String, Type>,
+) -> io::Result<()> {
+    let ret_ty = type_name(&cfg.place_tys[0], type_map);
+    write!(c, "struct {ret_ty} *P_{}(", cfg.name)?;
+    write!(h, "struct {ret_ty} *P_{}(", cfg.name)?;
     for arg in 1..=cfg.arg_count {
-        write!(c, "void *r{arg}")?;
-        write!(h, "void *r{arg}")?;
+        let arg_ty = type_name(&cfg.place_tys[arg], type_map);
+        write!(c, "struct {arg_ty} *r{arg}")?;
+        write!(h, "struct {arg_ty} *r{arg}")?;
 
         if arg != cfg.arg_count {
             write!(c, ", ")?;
@@ -174,7 +188,11 @@ pub fn compile_cfg(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg) -> i
     writeln!(h, ");")?;
 
     for place in (cfg.arg_count + 1)..cfg.place_tys.len() {
-        writeln!(c, "void *r{place};")?;
+        writeln!(
+            c,
+            "struct {} *r{place};",
+            type_name(&cfg.place_tys[place], type_map)
+        )?;
     }
 
     let mut visited = vec![false; cfg.basic_blocks.len()];
@@ -196,9 +214,17 @@ pub fn compile_cfg(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg) -> i
 
                     match &a.value {
                         Value::Place(p) => write!(c, "r{p}")?,
+                        Value::Call { func, .. } if func.0.as_str() == "invent" => {
+                            write!(c, "invent()")?;
+                        }
                         Value::Call { func, args } => {
                             match func.0.as_str() {
-                                "tuple" | "invent" | "print" => write!(c, "{func}{}(", args.len())?,
+                                "tuple" => write!(
+                                    c,
+                                    "*(struct {} *) &{func}{}(",
+                                    type_name(&cfg.place_tys[a.place], type_map),
+                                    args.len()
+                                )?,
                                 name => write!(c, "P_{name}(")?,
                             };
 
@@ -256,21 +282,30 @@ pub fn write_std_lib(mut f: impl io::Write) -> io::Result<()> {
     write!(f, "{STD_BASE}")?;
 
     for arg_count in 0..10 {
-        for name in ["tuple", "invent", "print"] {
-            write!(f, "void *{name}{arg_count}(")?;
-            for i in 0..arg_count {
-                write!(f, "void *r{i}")?;
-
-                if i + 1 != arg_count {
-                    write!(f, ", ")?;
-                }
-            }
-            writeln!(f, ") {{")?;
-
-            writeln!(f, "return (void *) 0;")?;
-
-            writeln!(f, "}}")?;
+        // Create the tuple function for this arg count
+        writeln!(f, "struct tuple_base{arg_count} {{")?;
+        for i in 0..arg_count {
+            writeln!(f, "void *e{i};")?;
         }
+        writeln!(f, "}};")?;
+
+        write!(f, "struct tuple_base{arg_count} tuple{arg_count}(")?;
+        for i in 0..arg_count {
+            write!(f, "void *r{i}")?;
+
+            if i + 1 != arg_count {
+                write!(f, ", ")?;
+            }
+        }
+        writeln!(f, ") {{")?;
+
+        write!(f, "return (struct tuple_base{arg_count}) {{ ")?;
+        for i in 0..arg_count {
+            write!(f, ".e{i} = r{i},")?;
+        }
+        writeln!(f, "}};")?;
+
+        writeln!(f, "}}")?;
     }
 
     Ok(())
