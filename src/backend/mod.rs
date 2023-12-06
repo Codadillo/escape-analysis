@@ -205,16 +205,14 @@ pub fn compile_cfg(
     type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
     let ret_ty = type_name(&cfg.place_tys[0], type_map);
-    let alloced = if deps.nodes[0].allocated() { "*" } else { " " };
+    let alloced = if deps.nodes[0].allocated() { "*" } else { "" };
     write!(c, "struct {ret_ty} {alloced}P_{}(", cfg.name)?;
     write!(h, "struct {ret_ty} {alloced}P_{}(", cfg.name)?;
+
     for arg in 1..=cfg.arg_count {
         let arg_ty = type_name(&cfg.place_tys[arg], type_map);
-        let alloced = if deps.nodes[arg].allocated() {
-            "*"
-        } else {
-            " "
-        };
+        let alloced = if deps.nodes[arg].allocated() { "*" } else { "" };
+
         write!(c, "struct {arg_ty} {alloced}r{arg}")?;
         write!(h, "struct {arg_ty} {alloced}r{arg}")?;
 
@@ -226,11 +224,13 @@ pub fn compile_cfg(
     writeln!(c, ") {{")?;
     writeln!(h, ");")?;
 
-    for place in (cfg.arg_count + 1)..cfg.place_tys.len() {
+    for p in (cfg.arg_count + 1)..cfg.place_tys.len() {
+        let alloced = if deps.nodes[p].allocated() { "*" } else { "" };
+
         writeln!(
             c,
-            "struct {} *r{place};",
-            type_name(&cfg.place_tys[place], type_map)
+            "struct {} {alloced}r{p};",
+            type_name(&cfg.place_tys[p], type_map)
         )?;
     }
 

@@ -43,7 +43,8 @@ fn main() {
         // println!("{name}: {:?}\n", cfg);
 
         // println!("{:?}", DepGraph::from_cfg(&mut ctx, &cfg, true));
-        let deps = DepGraph::from_cfg(&mut ctx, &cfg, true);
+        let ret_alloced = ctx.compute_depgraph(&name).unwrap().nodes[0].allocated();
+        let deps = DepGraph::from_cfg(&mut ctx, &cfg, ret_alloced);
 
         dot::render(
             &deps,
