@@ -8,6 +8,11 @@ impl fmt::Debug for Cfg {
         fmt_arglist(f, 1..=self.arg_count)?;
         writeln!(f, ":")?;
 
+        for (place, ty) in self.place_tys.iter().enumerate() {
+            write!(f, "_{place}: {ty:?}, ")?;
+        }
+        writeln!(f, "")?;
+
         for (i, bb) in self.basic_blocks.iter().enumerate() {
             write!(f, "{i}: {bb:#?}")?;
 

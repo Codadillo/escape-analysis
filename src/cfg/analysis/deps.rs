@@ -70,7 +70,7 @@ impl DepGraph {
 
     pub fn from_cfg(ctx: &mut Context, cfg: &Cfg, ret_alloced: bool) -> Self {
         let mut this = Self {
-            nodes: vec![Node::leaf(Perm::Clear); cfg.place_count],
+            nodes: vec![Node::leaf(Perm::Clear); cfg.place_tys.len()],
             new_lives: HashSet::new(),
             alloced_args: HashSet::new(),
         };

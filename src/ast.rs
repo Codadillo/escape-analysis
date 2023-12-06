@@ -1,13 +1,22 @@
 use std::fmt::Display;
 
+use crate::types::Type;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Ident(pub String);
 
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: Ident,
-    pub args: Vec<Ident>,
+    pub args: Vec<Arg>,
+    pub ret_ty: Type,
     pub body: Block,
+}
+
+#[derive(Debug, Clone)]
+pub struct Arg {
+    pub name: Ident,
+    pub ty: Type,
 }
 
 #[derive(Debug, Clone)]

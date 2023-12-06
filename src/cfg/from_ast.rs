@@ -1,29 +1,38 @@
 use std::collections::HashMap;
 
 use super::{Assign, Phi, Statement, Terminator, Value};
-use crate::{ast, cfg::Cfg};
+use crate::{
+    ast,
+    cfg::Cfg,
+    types::{Tuple, Type},
+};
 
 pub struct ConversionState {
     pub cfg: Cfg,
+    pub type_map: HashMap<ast::Ident, Type>,
     pub scopes: Vec<HashMap<ast::Ident, usize>>,
     pub last_block: usize,
 }
 
 impl ConversionState {
-    pub fn from_ast(func: ast::Function) -> Cfg {
+    pub fn from_ast(func: ast::Function, type_map: HashMap<ast::Ident, Type>) -> Cfg {
         let mut this = ConversionState {
-            cfg: Cfg::with_args(func.name, func.args.len()),
+            cfg: Cfg::with_args(
+                func.name,
+                func.args.iter().map(|a| a.ty.clone()).collect(),
+                func.ret_ty,
+            ),
+            type_map,
             scopes: Vec::new(),
             last_block: 0,
         };
 
         this.push_scope();
         for (i, arg) in func.args.into_iter().enumerate() {
-            this.set_place_scoped(arg, i + 1);
+            this.set_place_scoped(arg.name, i + 1);
         }
 
         let ret = this.add_block(func.body);
-        // this.add_assign(0, Value::Place(ret));
         this.set_terminator(Terminator::Return(ret));
 
         this.cfg
@@ -56,8 +65,11 @@ impl ConversionState {
     }
 
     pub fn add_call(&mut self, call: ast::Call) -> usize {
-        let place = self.cfg.add_place();
-        let args = call.args.into_iter().map(|e| self.add_expr(e)).collect();
+        let args: Vec<_> = call.args.into_iter().map(|e| self.add_expr(e)).collect();
+        let args_tys: Vec<_> = args.iter().map(|a| &self.cfg.place_tys[*a]).collect();
+        let place = self
+            .cfg
+            .add_place(self.get_type_map(&call.ident, &args_tys).unwrap());
 
         self.add_assign(
             place,
@@ -113,7 +125,18 @@ impl ConversionState {
     }
 
     pub fn add_phi(&mut self, opts: HashMap<usize, usize>) -> usize {
-        let place = self.cfg.add_place();
+        let phi_ty = {
+            let mut vals = opts.values();
+            let ty = self.cfg.place_tys[*vals.next().unwrap()].clone();
+
+            for val in vals {
+                assert_eq!(self.cfg.place_tys[*val], ty, "{val}");
+            }
+
+            ty
+        };
+
+        let place = self.cfg.add_place(phi_ty);
         self.cfg.basic_blocks[self.last_block]
             .phi
             .push(Phi { place, opts });
@@ -143,5 +166,19 @@ impl ConversionState {
 
     pub fn pop_scope(&mut self) {
         self.scopes.pop();
+    }
+
+    pub fn get_type_map(&self, id: &ast::Ident, args: &[&Type]) -> Option<Type> {
+        match id.0.as_str() {
+            "invent" | "print" => return Some(Type::unit()),
+            "tuple" => {
+                return Some(Type::Tuple(Tuple {
+                    elems: args.iter().map(|&t| t.clone()).collect(),
+                }))
+            }
+            _ => {}
+        }
+
+        self.type_map.get(id).cloned()
     }
 }

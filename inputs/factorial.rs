@@ -1,20 +1,20 @@
-fn iszero(n) {
+fn iszero(n: ()) -> () {
     invent(n)
 }
 
-fn one() {
+fn one() -> () {
     invent()
 }
 
-fn times(a, b) {
+fn times(a: (), b: ()) -> () {
     invent(a, b)
 }
 
-fn sub(a, b) {
+fn sub(a: (), b: ()) -> () {
     invent(a, b)
 }
 
-fn factorial(n) {
+fn factorial(n: ()) -> () {
     if iszero(n) {
         one()
     } else {

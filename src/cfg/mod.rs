@@ -5,14 +5,14 @@ pub mod render;
 
 use std::collections::HashMap;
 
-use crate::ast;
+use crate::{ast, types::Type};
 use from_ast::ConversionState;
 
 #[derive(Clone)]
 pub struct Cfg {
     pub name: ast::Ident,
     pub arg_count: usize,
-    pub place_count: usize,
+    pub place_tys: Vec<Type>,
     pub basic_blocks: Vec<BasicBlock>,
 }
 
@@ -69,15 +69,19 @@ pub enum Terminator {
 }
 
 impl Cfg {
-    pub fn from_ast(func: ast::Function) -> Self {
-        ConversionState::from_ast(func)
+    pub fn from_ast(func: ast::Function, type_map: HashMap<ast::Ident, Type>) -> Self {
+        ConversionState::from_ast(func, type_map)
     }
 
-    pub fn with_args(name: ast::Ident, arg_count: usize) -> Self {
+    pub fn with_args(name: ast::Ident, args: Vec<Type>, ret_ty: Type) -> Self {
+        let arg_count = args.len();
+        let mut place_tys = args;
+        place_tys.insert(0, ret_ty);
+
         Self {
             name,
             arg_count,
-            place_count: arg_count + 1,
+            place_tys,
             basic_blocks: vec![BasicBlock {
                 phi: vec![],
                 stmnts: vec![],
@@ -86,9 +90,10 @@ impl Cfg {
         }
     }
 
-    pub fn add_place(&mut self) -> usize {
-        let out = self.place_count;
-        self.place_count += 1;
+    pub fn add_place(&mut self, ty: Type) -> usize {
+        let out = self.place_tys.len();
+        self.place_tys.push(ty);
+
         out
     }
 

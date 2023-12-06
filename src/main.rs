@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use perm_mem::{
     backend::compile_cfgs_to_dir,
@@ -16,8 +16,17 @@ fn main() {
         Err(e) => panic!("{e}"),
     };
 
+    let type_map: HashMap<_, _> = module
+        .iter()
+        .map(|f| (f.name.clone(), f.ret_ty.clone()))
+        .collect();
+
     let mut ctx = Context::new();
-    ctx.add_cfgs(module.into_iter().map(Cfg::from_ast));
+    ctx.add_cfgs(
+        module
+            .into_iter()
+            .map(|f| Cfg::from_ast(f, type_map.clone())),
+    );
 
     let names: Vec<_> = ctx.fns.iter().map(|(n, _)| n.clone()).collect();
     let mut managed_cfgs = vec![];

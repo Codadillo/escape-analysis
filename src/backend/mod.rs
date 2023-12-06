@@ -48,7 +48,7 @@ pub fn compile_cfg_to_c(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg)
     writeln!(c, ") {{")?;
     writeln!(h, ");")?;
 
-    for place in (cfg.arg_count + 1)..cfg.place_count {
+    for place in (cfg.arg_count + 1)..cfg.place_tys.len() {
         writeln!(c, "void *r{place};")?;
     }
 
