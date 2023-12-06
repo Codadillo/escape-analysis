@@ -4,13 +4,6 @@ unit invent() {
     return (unit) {};
 }
 
-void *allocate(void *ptr) {
-    return (void *) 0;
-}
-
-void deallocate(void *ptr) {
-}
-
 void dup(void *ptr, int count) {
 }
 

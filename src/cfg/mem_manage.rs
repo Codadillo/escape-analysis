@@ -8,7 +8,7 @@ use super::{
 // todo: we should monomorphize over whether the result of a function needs to be allocated
 // (alternatively, whether or not a field of a struct is stored inline can be used)
 //
-// e.g. inputs/allocated_args stores a tuple with stack-allocated members into a dynamically 
+// e.g. inputs/allocated_args stores a tuple with stack-allocated members into a dynamically
 // allocated list using the my_tuple function
 
 pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
@@ -75,7 +75,9 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
                                         })
                                         .map(|(_, arg)| arg),
                                 );
-                            } else if a.allocate && func.0 == "tuple" {
+                            } else if a.allocate
+                                && (func.0 == "tuple" || ctx.type_map.contains_key(&func.0))
+                            {
                                 passed_ownership.extend(args);
                             }
 

@@ -92,10 +92,14 @@ impl DepGraph {
                             this.nodes[a.place].deps = Deps::All(args.clone());
                         }
                         "invent" | "print" => {}
-                        ty if ctx.type_map.contains_key(ty) => {}
-                        _ => {
-                            let fdeps = ctx.compute_depgraph(func).unwrap();
-                            this.merge_in(a.place, args, ctx.get_cfg(func).unwrap(), fdeps);
+                        name => {
+                            if let Some(fdeps) = ctx.compute_depgraph(func) {
+                                this.merge_in(a.place, args, ctx.get_cfg(func).unwrap(), fdeps);
+                            } else if ctx.type_map.contains_key(name) {
+                                this.nodes[a.place].deps = Deps::All(args.clone());
+                            } else {
+                                panic!()
+                            }
                         }
                     },
                 },

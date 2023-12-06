@@ -2,7 +2,10 @@ use std::{env, fs, path::PathBuf};
 
 use perm_mem::{
     backend::compile_module_to_dir,
-    cfg::{analysis::Context, mem_manage, Cfg},
+    cfg::{
+        analysis::{deps::DepGraph, Context},
+        mem_manage, Cfg,
+    },
     parser,
 };
 
@@ -40,23 +43,21 @@ fn main() {
         // println!("{name}: {:?}\n", cfg);
 
         // println!("{:?}", DepGraph::from_cfg(&mut ctx, &cfg, true));
+        let deps = DepGraph::from_cfg(&mut ctx, &cfg, true);
+
+        dot::render(
+            &deps,
+            &mut std::fs::File::create(&format!(
+                "renders/{}.{name}.dot",
+                path.file_name().unwrap().to_str().unwrap()
+            ))
+            .unwrap(),
+        )
+        .unwrap();
 
         mem_manage::insert_management(&mut ctx, &mut cfg);
         println!("{name}: {:?}\n", cfg);
-        managed_cfgs.push(cfg);
-
-        // let graph = ctx.compute_depgraph(&name).unwrap();
-        // println!("{graph:?}");
-
-        // dot::render(
-        //     &graph,
-        //     &mut std::fs::File::create(&format!(
-        //         "renders/{}.{name}.dot",
-        //         path.file_name().unwrap().to_str().unwrap()
-        //     ))
-        //     .unwrap(),
-        // )
-        // .unwrap();
+        managed_cfgs.push((cfg, deps));
     }
 
     compile_module_to_dir("build", &managed_cfgs, &ctx.type_map).unwrap();

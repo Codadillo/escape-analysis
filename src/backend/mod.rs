@@ -8,7 +8,7 @@ use std::{
 };
 
 use crate::{
-    cfg::{Cfg, Statement, Terminator, Value},
+    cfg::{analysis::deps::DepGraph, Cfg, Statement, Terminator, Value},
     types::Type,
 };
 
@@ -17,14 +17,20 @@ const STD_BASE: &str = include_str!("std_base.c");
 
 pub fn compile_module_to_dir<'a>(
     dir: impl AsRef<Path>,
-    cfgs: impl IntoIterator<Item = &'a Cfg>,
+    cfgs: impl IntoIterator<Item = &'a (Cfg, DepGraph)>,
     type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
-    // Create the build directorya
+    // Create the build directory
     let dir = dir.as_ref();
     fs::create_dir_all(dir)?;
 
-    // Compile the program to c
+    // Create our files
+    let mut type_file = fs::File::create(dir.join("types.h"))?;
+    writeln!(&mut type_file, "#pragma once")?;
+    writeln!(&mut type_file, "#include <stdlib.h>\n")?;
+
+    let std_file = fs::File::create(dir.join("std.c"))?;
+
     let mut program_file = fs::File::create(dir.join("program.c"))?;
     let mut header_file = fs::File::create(dir.join("program.h"))?;
     writeln!(program_file, "#include \"std.c\"")?;
@@ -32,22 +38,20 @@ pub fn compile_module_to_dir<'a>(
     writeln!(program_file, "#include \"types.h\"\n")?;
     writeln!(header_file, "#include \"types.h\"\n")?;
 
+    // Compile the program to c
     let mut used_types = vec![];
-    for cfg in cfgs {
+    for (cfg, deps) in cfgs {
         used_types.extend(&cfg.place_tys);
-        compile_cfg(&mut program_file, &mut header_file, cfg, type_map)?;
+        compile_cfg(&mut program_file, &mut header_file, cfg, deps, type_map)?;
     }
 
     // Write the Makefile
     fs::write(dir.join("Makefile"), MAKEFILE)?;
 
     // Write the standard library
-    let std_file = fs::File::create(dir.join("std.c"))?;
-    write_std_lib(std_file)?;
+    write_std_lib(std_file, &mut type_file)?;
 
     // Write the types
-    let mut type_file = fs::File::create(dir.join("types.h"))?;
-    writeln!(&mut type_file, "#pragma once\n")?;
     compile_tys(&mut type_file, used_types, type_map, type_map)?;
     writeln!(
         &mut type_file,
@@ -79,11 +83,17 @@ pub fn compile_tys<'a>(
             // writeln!(h, "struct {c_name} *P_{name}(int disc, void *inner) {{",)?;
             // writeln!(
             //     h,
-            //     "return (struct {c_name}) {{ .disc = disc, .inner = inner }}"
+            //     "return (struct {c_name}) {{ .disc = disc, .inner = inner }};"
             // )?;
             // writeln!(h, "}}")?;
 
-            writeln!(h, "void *P_{name}(void *inner) {{ return (void *) 0; }}")?;
+            let c_name = type_name(ty, type_map);
+            writeln!(h, "struct {c_name} P_{name}(void *inner) {{",)?;
+            writeln!(
+                h,
+                "return (struct {c_name}) {{ .disc = 0, .inner = inner }};"
+            )?;
+            writeln!(h, "}}")?;
         }
     }
 
@@ -100,7 +110,7 @@ pub fn compile_ty(
         return Ok(());
     }
 
-    match ty {
+    let name = match ty {
         Type::Tuple(t) => {
             let name = type_name(ty, type_map);
             remap.insert(ty.clone(), name.clone());
@@ -109,12 +119,24 @@ pub fn compile_ty(
                 compile_ty(h, elem, remap, type_map)?;
             }
 
+            // Create the tuple type
             writeln!(h, "// {ty:?}")?;
             writeln!(h, "struct {name} {{")?;
             for (i, elem) in t.elems.iter().enumerate() {
                 writeln!(h, "struct {} *e{i};", type_name(elem, type_map))?;
             }
             writeln!(h, "}};\n")?;
+
+            // Create the conversion for that tuple type from its untyped version
+            writeln!(
+                h,
+                "struct {name} from_tuple_base{name}(struct tuple_base{} base) {{",
+                t.elems.len()
+            )?;
+            writeln!(h, "return *(struct {name} *) &base;")?;
+            writeln!(h, "}}")?;
+
+            name
         }
         Type::Enum(e) => {
             let name = type_name(ty, type_map);
@@ -124,6 +146,7 @@ pub fn compile_ty(
                 compile_ty(h, variant, remap, type_map)?;
             }
 
+            // Create the enum struct
             writeln!(h, "// {ty:?}")?;
             writeln!(h, "struct {name} {{")?;
             writeln!(h, "int disc;")?;
@@ -135,12 +158,21 @@ pub fn compile_ty(
 
             writeln!(h, "}} *inner;")?;
             writeln!(h, "}};\n")?;
+
+            name
         }
         Type::Named(n) => {
             let aliased_ty = type_map.get(n).unwrap();
-            compile_ty(h, aliased_ty, remap, type_map)?;
+            return compile_ty(h, aliased_ty, remap, type_map);
         }
-    }
+    };
+
+    // Create the allocation function for the type
+    writeln!(h, "struct {name} *allocate_{name}(struct {name} val) {{")?;
+    writeln!(h, "struct {name} *a = malloc(sizeof(val));")?;
+    writeln!(h, "*a = val;")?;
+    writeln!(h, "return a;")?;
+    writeln!(h, "}}")?;
 
     Ok(())
 }
@@ -169,15 +201,22 @@ pub fn compile_cfg(
     mut c: impl io::Write,
     mut h: impl io::Write,
     cfg: &Cfg,
+    deps: &DepGraph,
     type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
     let ret_ty = type_name(&cfg.place_tys[0], type_map);
-    write!(c, "struct {ret_ty} *P_{}(", cfg.name)?;
-    write!(h, "struct {ret_ty} *P_{}(", cfg.name)?;
+    let alloced = if deps.nodes[0].allocated() { "*" } else { " " };
+    write!(c, "struct {ret_ty} {alloced}P_{}(", cfg.name)?;
+    write!(h, "struct {ret_ty} {alloced}P_{}(", cfg.name)?;
     for arg in 1..=cfg.arg_count {
         let arg_ty = type_name(&cfg.place_tys[arg], type_map);
-        write!(c, "struct {arg_ty} *r{arg}")?;
-        write!(h, "struct {arg_ty} *r{arg}")?;
+        let alloced = if deps.nodes[arg].allocated() {
+            "*"
+        } else {
+            " "
+        };
+        write!(c, "struct {arg_ty} {alloced}r{arg}")?;
+        write!(h, "struct {arg_ty} {alloced}r{arg}")?;
 
         if arg != cfg.arg_count {
             write!(c, ", ")?;
@@ -206,10 +245,14 @@ pub fn compile_cfg(
         for stmnt in &block.stmnts {
             match stmnt {
                 Statement::Assign(a) => {
+                    let c_name = type_name(&cfg.place_tys[a.place], type_map);
+
                     write!(c, "r{} = ", a.place)?;
 
+                    let mut closing_parens = 0;
                     if a.allocate {
-                        write!(c, "allocate(")?;
+                        write!(c, "allocate_{c_name}(")?;
+                        closing_parens += 1;
                     }
 
                     match &a.value {
@@ -219,12 +262,10 @@ pub fn compile_cfg(
                         }
                         Value::Call { func, args } => {
                             match func.0.as_str() {
-                                "tuple" => write!(
-                                    c,
-                                    "*(struct {} *) &{func}{}(",
-                                    type_name(&cfg.place_tys[a.place], type_map),
-                                    args.len()
-                                )?,
+                                "tuple" => {
+                                    closing_parens += 1;
+                                    write!(c, "from_tuple_base{c_name}({func}{}(", args.len())?
+                                }
                                 name => write!(c, "P_{name}(")?,
                             };
 
@@ -239,9 +280,7 @@ pub fn compile_cfg(
                         }
                     }
 
-                    if a.allocate {
-                        write!(c, ")")?;
-                    }
+                    write!(c, "{}", ")".repeat(closing_parens))?;
                     writeln!(c, ";")?;
                 }
                 Statement::Deallocate(r) => writeln!(c, "deallocate(r{r});")?,
@@ -278,16 +317,16 @@ pub fn compile_cfg(
     Ok(())
 }
 
-pub fn write_std_lib(mut f: impl io::Write) -> io::Result<()> {
+pub fn write_std_lib(mut f: impl io::Write, mut types: impl io::Write) -> io::Result<()> {
     write!(f, "{STD_BASE}")?;
 
     for arg_count in 0..10 {
         // Create the tuple function for this arg count
-        writeln!(f, "struct tuple_base{arg_count} {{")?;
+        writeln!(types, "struct tuple_base{arg_count} {{")?;
         for i in 0..arg_count {
-            writeln!(f, "void *e{i};")?;
+            writeln!(types, "void *e{i};")?;
         }
-        writeln!(f, "}};")?;
+        writeln!(types, "}};")?;
 
         write!(f, "struct tuple_base{arg_count} tuple{arg_count}(")?;
         for i in 0..arg_count {
