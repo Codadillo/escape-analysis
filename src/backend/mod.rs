@@ -100,6 +100,16 @@ pub fn compile_cfg_to_c(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg)
             }
         }
 
+        let succs = cfg.successors(bb);
+        for &s in &succs {
+            let succ = &cfg.basic_blocks[s];
+            for phi in &succ.phi {
+                if let Some(desired_place) = phi.opts.get(&bb) {
+                    writeln!(c, "r{} = r{desired_place};", phi.place)?;
+                }
+            }
+        }
+
         match block.terminator.as_ref().unwrap() {
             Terminator::Goto(next) => writeln!(c, "goto L_{next};")?,
             Terminator::Return(r) => writeln!(c, "return r{r};")?,
@@ -109,7 +119,7 @@ pub fn compile_cfg_to_c(mut c: impl io::Write, mut h: impl io::Write, cfg: &Cfg)
             }
         }
 
-        bb_stack.extend(cfg.successors(bb).into_iter().filter(|s| !visited[*s]));
+        bb_stack.extend(succs.into_iter().filter(|s| !visited[*s]));
     }
 
     writeln!(c, "}}\n")?;
