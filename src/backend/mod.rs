@@ -270,6 +270,9 @@ pub fn compile_cfg(
                             };
 
                             for (i, arg) in args.iter().enumerate() {
+                                if !deps.nodes[*arg].allocated() {
+                                    write!(c, "&")?;
+                                }
                                 write!(c, "r{arg}")?;
 
                                 if i + 1 != args.len() {
