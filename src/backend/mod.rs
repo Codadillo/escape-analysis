@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::{hash_map::DefaultHasher, HashMap, HashSet},
     fs,
     hash::{Hash, Hasher},
     io,
@@ -8,7 +8,11 @@ use std::{
 };
 
 use crate::{
-    cfg::{analysis::deps::DepGraph, Cfg, Statement, Terminator, Value},
+    ast::Ident,
+    cfg::{
+        analysis::deps::{DepGraph, Deps},
+        Cfg, Statement, Terminator, Value,
+    },
     types::Type,
 };
 
@@ -17,7 +21,7 @@ const STD_BASE: &str = include_str!("std_base.c");
 
 pub fn compile_module_to_dir<'a>(
     dir: impl AsRef<Path>,
-    cfgs: impl IntoIterator<Item = &'a (Cfg, DepGraph)>,
+    cfgs: HashMap<Ident, (Cfg, DepGraph)>,
     type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
     // Create the build directory
@@ -40,9 +44,16 @@ pub fn compile_module_to_dir<'a>(
 
     // Compile the program to c
     let mut used_types = vec![];
-    for (cfg, deps) in cfgs {
+    for (_, (cfg, deps)) in &cfgs {
         used_types.extend(&cfg.place_tys);
-        compile_cfg(&mut program_file, &mut header_file, cfg, deps, type_map)?;
+        compile_cfg(
+            &mut program_file,
+            &mut header_file,
+            cfg,
+            deps,
+            &cfgs,
+            type_map,
+        )?;
     }
 
     // Write the Makefile
@@ -202,6 +213,7 @@ pub fn compile_cfg(
     mut h: impl io::Write,
     cfg: &Cfg,
     deps: &DepGraph,
+    other_fns: &HashMap<Ident, (Cfg, DepGraph)>,
     type_map: &HashMap<String, Type>,
 ) -> io::Result<()> {
     let ret_ty = type_name(&cfg.place_tys[0], type_map);
@@ -211,25 +223,50 @@ pub fn compile_cfg(
 
     for arg in 1..=cfg.arg_count {
         let arg_ty = type_name(&cfg.place_tys[arg], type_map);
-        let alloced = if deps.nodes[arg].allocated() { "*" } else { "" };
-
-        write!(c, "struct {arg_ty} {alloced}r{arg}")?;
-        write!(h, "struct {arg_ty} {alloced}r{arg}")?;
+        write!(c, "struct {arg_ty} *r{arg}")?;
+        write!(h, "struct {arg_ty} *r{arg}")?;
 
         if arg != cfg.arg_count {
             write!(c, ", ")?;
             write!(h, ", ")?;
         }
     }
+
+    let mut arged_new = HashSet::new();
+    for new in &deps.new_lives {
+        // TODO: this check probably is incorrect
+        // also its used in other places too
+        if deps.nodes[0].deps.get().contains(new) {
+            continue;
+        }
+        arged_new.insert(*new);
+
+        write!(c, ", ")?;
+        write!(h, ", ")?;
+
+        let arg_ty = type_name(&cfg.place_tys[*new], type_map);
+
+        write!(c, "struct {arg_ty} *r{new}")?;
+        write!(h, "struct {arg_ty} *r{new}")?;
+    }
+
     writeln!(c, ") {{")?;
     writeln!(h, ");")?;
 
     for p in (cfg.arg_count + 1)..cfg.place_tys.len() {
-        let alloced = if deps.nodes[p].allocated() { "*" } else { "" };
+        if arged_new.contains(&p) {
+            continue;
+        }
+
+        let ptr = if deps.nodes[p].allocated() || matches!(&deps.nodes[p].deps, Deps::Xor(_)) {
+            "*"
+        } else {
+            ""
+        };
 
         writeln!(
             c,
-            "struct {} {alloced}r{p};",
+            "struct {} {ptr}r{p};",
             type_name(&cfg.place_tys[p], type_map)
         )?;
     }
@@ -245,8 +282,29 @@ pub fn compile_cfg(
         for stmnt in &block.stmnts {
             match stmnt {
                 Statement::Assign(a) => {
+                    let new_buffers = match &a.value {
+                        Value::Call { func, .. } => match other_fns.get(func) {
+                            None => vec![],
+                            Some((f_cfg, f_deps)) => f_deps
+                                .new_lives
+                                .iter()
+                                .filter(|new| !deps.nodes[0].deps.get().contains(*new))
+                                .map(|new| type_name(&f_cfg.place_tys[*new], type_map))
+                                .enumerate()
+                                .collect(),
+                        },
+                        _ => vec![],
+                    };
+
+                    for (i, new_ty) in &new_buffers {
+                        writeln!(c, "struct {new_ty} r{}n{i};", a.place)?;
+                    }
+
                     let c_name = type_name(&cfg.place_tys[a.place], type_map);
 
+                    if arged_new.contains(&a.place) {
+                        write!(c, "*")?;
+                    }
                     write!(c, "r{} = ", a.place)?;
 
                     let mut closing_parens = 0;
@@ -270,7 +328,7 @@ pub fn compile_cfg(
                             };
 
                             for (i, arg) in args.iter().enumerate() {
-                                if !deps.nodes[*arg].allocated() {
+                                if !deps.nodes[*arg].allocated() && !arged_new.contains(arg) {
                                     write!(c, "&")?;
                                 }
                                 write!(c, "r{arg}")?;
@@ -279,6 +337,11 @@ pub fn compile_cfg(
                                     write!(c, ", ")?;
                                 }
                             }
+
+                            for (i, _) in new_buffers {
+                                write!(c, ", &r{}n{i}", a.place)?;
+                            }
+
                             write!(c, ")")?;
                         }
                     }
@@ -298,6 +361,7 @@ pub fn compile_cfg(
             let succ = &cfg.basic_blocks[s];
             for phi in &succ.phi {
                 if let Some(desired_place) = phi.opts.get(&bb) {
+                    // todo: handle the desired place not being a ref already
                     writeln!(c, "r{} = r{desired_place};", phi.place)?;
                 }
             }

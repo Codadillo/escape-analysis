@@ -133,12 +133,29 @@ impl DepGraph {
             }
         }
 
+        // calculate every node that's reachable from the returned node
+        let reachable_nodes = {
+            let mut nodes = HashSet::new();
+            let mut len = nodes.len();
+
+            nodes.insert(0);
+            while nodes.len() != len {
+                len = nodes.len();
+
+                for n in nodes.clone() {
+                    nodes.extend(this.nodes[n].deps.get());
+                }
+            }
+
+            nodes
+        };
+
         // populate new lives and alloced args
         for (i, node) in this.nodes.iter().enumerate() {
             let is_arg = (1..=cfg.arg_count).contains(&i);
 
-            // if it's not an argument or a xor, its new
-            if !is_arg && !matches!(node.deps, Deps::Xor(_)) {
+            // if it's rechable and its neither an argument nor a xor, its new
+            if reachable_nodes.contains(&i) && !is_arg && !matches!(node.deps, Deps::Xor(_)) {
                 this.new_lives.insert(i);
             }
 
@@ -184,12 +201,12 @@ impl DepGraph {
             self.nodes[remap_arg].weight = Perm::Opaque;
         }
 
-        self.new_lives.extend(
-            child_graph
-                .new_lives
-                .into_iter()
-                .map(|l| remap.get(&l).unwrap()),
-        );
+        // self.new_lives.extend(
+        //     child_graph
+        //         .new_lives
+        //         .into_iter()
+        //         .map(|l| remap.get(&l).unwrap()),
+        // );
     }
 
     fn remap_place(&mut self, place: usize, remap: &mut HashMap<usize, usize>) -> usize {

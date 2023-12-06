@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf};
+use std::{collections::HashMap, env, fs, path::PathBuf};
 
 use perm_mem::{
     backend::compile_module_to_dir,
@@ -37,7 +37,7 @@ fn main() {
     ctx.type_map = type_map;
 
     let names: Vec<_> = ctx.fns.iter().map(|(n, _)| n.clone()).collect();
-    let mut managed_cfgs = vec![];
+    let mut managed_cfgs = HashMap::new();
     for name in names {
         let mut cfg = ctx.get_cfg(&name).unwrap().clone();
         // println!("{name}: {:?}\n", cfg);
@@ -56,10 +56,12 @@ fn main() {
         )
         .unwrap();
 
+    
+
         mem_manage::insert_management(&mut ctx, &mut cfg);
         println!("{name}: {:?}\n", cfg);
-        managed_cfgs.push((cfg, deps));
+        managed_cfgs.insert(cfg.name.clone(), (cfg, deps));
     }
 
-    compile_module_to_dir("build", &managed_cfgs, &ctx.type_map).unwrap();
+    compile_module_to_dir("build", managed_cfgs, &ctx.type_map).unwrap();
 }
