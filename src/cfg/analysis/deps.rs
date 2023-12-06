@@ -413,6 +413,22 @@ impl DepGraph {
 
         out
     }
+
+    pub fn non_ret_new_lives(&self) -> HashSet<usize> {
+        let mut new_lives = self.new_lives.clone();
+        let mut stack = vec![0];
+
+        while let Some(new) = stack.pop() {
+            let Deps::Xor(deps) = &self.nodes[new].deps else {
+                new_lives.remove(&new);
+                continue;
+            };
+
+            stack.extend(deps)
+        }
+
+        new_lives
+    }
 }
 
 type Nd = usize;

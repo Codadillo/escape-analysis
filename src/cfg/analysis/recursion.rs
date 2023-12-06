@@ -2,8 +2,23 @@ use crate::cfg::{Assign, BasicBlock, Cfg, Statement, Value};
 
 use super::{deps::DepGraph, Context};
 
+const ALLOC_ALWAYS: bool = false;
+
 impl Context {
     pub fn compute_recursive_depgraph(&mut self, cfg: &Cfg) -> DepGraph {
+        if ALLOC_ALWAYS {
+            eprintln!("Warning: ALLOC_ALWAYS is true.");
+
+            let mut opaque = DepGraph::opaque();
+            self.set_depgraph(&cfg.name, opaque.clone());
+
+            let internal_deps = DepGraph::from_cfg(self, &cfg, true);
+            opaque.alloced_args = internal_deps.alloced_args;
+
+            self.set_depgraph(&cfg.name, opaque.clone());
+            return opaque;
+        }
+
         let mut no_recurse = cfg.clone();
         let mut recurses = false;
 

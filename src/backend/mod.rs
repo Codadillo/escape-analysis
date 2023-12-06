@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
+    collections::{hash_map::DefaultHasher, HashMap},
     fs,
     hash::{Hash, Hasher},
     io,
@@ -232,20 +232,14 @@ pub fn compile_cfg(
         }
     }
 
-    let mut arged_new = HashSet::new();
-    for new in &deps.new_lives {
-        // TODO: this check probably is incorrect
-        // also its used in other places too
-        if deps.nodes[0].deps.get().contains(new) {
-            continue;
-        }
-        arged_new.insert(*new);
-
+    // TODO: currently using non_ret_new_lives is a little incorrect
+    // we need to handle the case where ther returned value is Xor(allocated thing, unallocated thing)
+    let arged_new = deps.non_ret_new_lives();
+    for new in &arged_new {
         write!(c, ", ")?;
         write!(h, ", ")?;
 
         let arg_ty = type_name(&cfg.place_tys[*new], type_map);
-
         write!(c, "struct {arg_ty} *r{new}")?;
         write!(h, "struct {arg_ty} *r{new}")?;
     }
@@ -258,7 +252,9 @@ pub fn compile_cfg(
             continue;
         }
 
-        let ptr = if deps.nodes[p].allocated() || matches!(&deps.nodes[p].deps, Deps::Xor(_)) {
+        let ptr = if deps.nodes[p].allocated()
+            || matches!(&deps.nodes[p].deps, Deps::Xor(ds) if ds.iter().any(|d| deps.nodes[*d].allocated()))
+        {
             "*"
         } else {
             ""
@@ -285,13 +281,16 @@ pub fn compile_cfg(
                     let new_buffers = match &a.value {
                         Value::Call { func, .. } => match other_fns.get(func) {
                             None => vec![],
-                            Some((f_cfg, f_deps)) => f_deps
-                                .new_lives
-                                .iter()
-                                .filter(|new| !deps.nodes[0].deps.get().contains(*new))
-                                .map(|new| type_name(&f_cfg.place_tys[*new], type_map))
-                                .enumerate()
-                                .collect(),
+                            Some((f_cfg, f_deps)) => {
+                                let f_arged_new = f_deps.non_ret_new_lives();
+                                f_deps
+                                    .new_lives
+                                    .iter()
+                                    .filter(|new| f_arged_new.contains(*new))
+                                    .map(|new| type_name(&f_cfg.place_tys[*new], type_map))
+                                    .enumerate()
+                                    .collect()
+                            }
                         },
                         _ => vec![],
                     };
@@ -328,7 +327,10 @@ pub fn compile_cfg(
                             };
 
                             for (i, arg) in args.iter().enumerate() {
-                                if !deps.nodes[*arg].allocated() && !arged_new.contains(arg) {
+                                if !deps.nodes[*arg].allocated()
+                                    && !(1..=cfg.arg_count).contains(arg)
+                                    && !arged_new.contains(arg)
+                                {
                                     write!(c, "&")?;
                                 }
                                 write!(c, "r{arg}")?;
