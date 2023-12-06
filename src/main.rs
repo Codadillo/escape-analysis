@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 use perm_mem::{
-    cfg::{analysis::{Context, deps::DepGraph}, Cfg, mem_manage},
+    cfg::{analysis::Context, Cfg, mem_manage},
     parser,
 };
 

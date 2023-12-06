@@ -42,9 +42,9 @@ impl fmt::Debug for BasicBlock {
                     write!(f, "let _{} = {prefix}{:?}", a.place, a.value)?
                 }
                 Statement::Nop => write!(f, "nop")?,
-                Statement::Deallocate(p) => write!(f, "deallocate {p:?}")?,
-                Statement::Dup(r) => write!(f, "dup+{} {}", r.count, r.place)?,
-                Statement::Drop(r) => write!(f, "drop-{} {}", r.count, r.place)?,
+                Statement::Deallocate(p) => write!(f, "deallocate _{p:?}")?,
+                Statement::Dup(r) => write!(f, "dup+{} _{}", r.count, r.place)?,
+                Statement::Drop(r) => write!(f, "drop-{} _{}", r.count, r.place)?,
             }
             writeln!(f, ";")?;
         }

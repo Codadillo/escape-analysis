@@ -357,6 +357,40 @@ impl DepGraph {
 
         out
     }
+
+    pub fn flatten_to_counters_ignorant(
+        &self,
+        nodes: impl IntoIterator<Item = usize>,
+    ) -> Vec<usize> {
+        let mut out = vec![0; self.nodes.len()];
+
+        for node in nodes {
+            // very ignorant >._.<
+            if self.nodes[node].allocated() {
+                continue;
+            }
+
+            out[node] += 1;
+
+            match &self.nodes[node].deps {
+                Deps::All(deps) => {
+                    let ctrs = self.flatten_to_counters_ignorant(deps.iter().copied());
+                    for (o, a) in out.iter_mut().zip(ctrs) {
+                        *o += a;
+                    }
+                }
+
+                Deps::Xor(deps) => {
+                    let ctrs = self.flatten_to_counters_ignorant(deps.iter().copied());
+                    for (o, a) in out.iter_mut().zip(ctrs) {
+                        *o = a.max(*o);
+                    }
+                }
+            }
+        }
+
+        out
+    }
 }
 
 type Nd = usize;

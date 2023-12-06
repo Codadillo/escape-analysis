@@ -1,12 +1,8 @@
 use std::collections::HashSet;
 
 use super::{
-    analysis::{
-        deps::DepGraph,
-        lva::LVA,
-        Context,
-    },
-    Cfg, RefCount, Statement, Terminator, Value,
+    analysis::{deps::DepGraph, lva::LVA, Context},
+    Cfg, RefCount, Statement, Value,
 };
 
 pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
@@ -21,13 +17,13 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
     let args = HashSet::from_iter(1..=cfg.arg_count);
     let preds = cfg.predecessors();
     for b in 0..cfg.basic_blocks.len() {
-        let mut drop_locations = vec![];
+        let mut added_stmnts = vec![];
 
         // If there are no preds and any arguments aren't live, drop them
         if preds.get(&b).filter(|p| !p.is_empty()).is_none() {
             for &dead_arg in args.difference(&lva.blocks[b].live_in) {
                 if deps.nodes[dead_arg].allocated() {
-                    drop_locations.push((0, RefCount::one(dead_arg)));
+                    added_stmnts.push((0, Statement::Drop(RefCount::one(dead_arg))));
                 }
             }
         }
@@ -35,6 +31,9 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
         // Go through the block statement by statement
         let mut live_out = lva.blocks[b].live_out.clone();
         for (i, stmnt) in cfg.basic_blocks[b].stmnts.iter_mut().enumerate().rev() {
+            let live_ctrs = deps.flatten_to_counters_ignorant(live_out.iter().copied());
+            let mut passed_ownership: HashSet<usize> = HashSet::new();
+
             let new_live_in: HashSet<_> = match stmnt {
                 Statement::Assign(a) => {
                     let place_alloced = deps.nodes[a.place].allocated();
@@ -48,13 +47,30 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
                             [*p].into_iter().collect()
                         }
                         Value::Call { func, args } => {
-                            if place_alloced
-                                && ctx
-                                    .get_depgraph(func)
+                            let f_depgraph = ctx.compute_depgraph(func);
+                            if place_alloced {
+                                a.allocate = f_depgraph
+                                    .as_ref()
                                     .map(|d| !d.nodes[0].allocated())
-                                    .unwrap_or(true)
-                            {
-                                a.allocate = true;
+                                    .unwrap_or(true);
+                            }
+
+                            if let Some(f_depgraph) = f_depgraph {
+                                let preorder: HashSet<_> =
+                                    f_depgraph.preorder().into_iter().collect();
+
+                                passed_ownership.extend(
+                                    args.iter()
+                                        .enumerate()
+                                        .filter(|(i, _)| {
+                                            let child_arg = i + 1;
+                                            (a.allocate && preorder.contains(&child_arg))
+                                                || f_depgraph.alloced_args.contains(&child_arg)
+                                        })
+                                        .map(|(_, arg)| arg),
+                                );
+                            } else if a.allocate && func.0 == "tuple" {
+                                passed_ownership.extend(args);
                             }
 
                             args.iter().copied().collect()
@@ -62,38 +78,68 @@ pub fn insert_management(ctx: &mut Context, cfg: &mut Cfg) {
                     }
                 }
                 Statement::Nop => continue,
-                Statement::Deallocate(_) | Statement::Dup(_) | Statement::Drop(_) => todo!(),
+                Statement::Deallocate(_) | Statement::Dup(_) | Statement::Drop(_) => continue,
             };
 
-            let live_ctrs = deps.flatten_to_counters(live_out.iter().copied());
-
+            let mut new_dups = vec![];
+            let mut new_drops = vec![];
             for &new in &new_live_in {
-                if live_ctrs[new] == 0 && deps.nodes[new].allocated() {
-                    drop_locations.push((i + 1, RefCount::one(new)));
+                if !deps.nodes[new].allocated() {
+                    continue;
+                }
+
+                let live_ref = live_ctrs[new] != 0 || live_out.contains(&new);
+
+                if live_ref && passed_ownership.contains(&new) {
+                    new_dups.push(new);
+                }
+
+                if !live_ref && !passed_ownership.contains(&new) {
+                    new_drops.push(new);
                 }
             }
+
+            added_stmnts.extend(
+                new_drops
+                    .into_iter()
+                    .map(|n| (i + 1, Statement::Drop(RefCount::one(n)))),
+            );
+            added_stmnts.extend(
+                new_dups
+                    .into_iter()
+                    .map(|n| (i, Statement::Dup(RefCount::one(n)))),
+            );
 
             live_out.extend(new_live_in);
         }
 
-        // Actually add in the operations
-        for (loc, count) in drop_locations.into_iter().rev() {
-            cfg.basic_blocks[b]
-                .stmnts
-                .insert(loc, Statement::Drop(count));
+        // Actually add in the dup/drop operations
+        for (loc, stmnt) in added_stmnts.into_iter() {
+            cfg.basic_blocks[b].stmnts.insert(loc, stmnt);
         }
 
-        // If the terminator of this uses a variable that's
-        // not in live out, drop it at the start of each successor
-        match cfg.basic_blocks[b].terminator {
-            Some(Terminator::IfElse { cond, .. }) if !lva.blocks[b].live_out.contains(&cond) => {
-                for succ in cfg.successors(b) {
-                    cfg.basic_blocks[succ]
-                        .stmnts
-                        .insert(0, Statement::Drop(RefCount::one(cond)))
-                }
+        // If any successors do not have a variable in their live ref in
+        // that's in this block's live ref out, drop it on entry
+        let live_out = &lva.blocks[b].live_out;
+        let live_ctrs_out = deps.flatten_to_counters_ignorant(live_out.iter().copied());
+        let live_ref_out: HashSet<_> = (0..deps.nodes.len())
+            .filter(|n| deps.nodes[*n].allocated())
+            .filter(|n| live_ctrs_out[*n] != 0 || live_out.contains(n))
+            .collect();
+
+        for succ in cfg.successors(b) {
+            let live_in = &lva.blocks[succ].live_in;
+            let live_ctrs_in = deps.flatten_to_counters_ignorant(live_in.iter().copied());
+            let live_ref_in: HashSet<_> = (0..deps.nodes.len())
+                .filter(|n| deps.nodes[*n].allocated())
+                .filter(|n| live_ctrs_in[*n] != 0 || live_in.contains(n))
+                .collect();
+
+            for dead in live_ref_out.difference(&live_ref_in) {
+                cfg.basic_blocks[succ]
+                    .stmnts
+                    .insert(0, Statement::Drop(RefCount::one(*dead)));
             }
-            _ => {}
         }
     }
 }
