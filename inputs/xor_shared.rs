@@ -1,9 +1,31 @@
-fn function(a: (), b: (), c: ()) -> ((), ()) {
-    let hi = if a {
-        b
+fn function(cond: (), a: (), b: ()) -> ((), ()) {
+    if cond {
+        a
     } else {
-        c
-    };
+        b
+    }
+}
 
-    tuple(hi, b)
+fn useit() -> ((), ()) {
+    function(invent(), invent(), invent())
+}
+
+fn exampple(arg: ()) -> ((), (), ()) {
+    tuple(tuple(arg, invent()), invent())
+}
+
+fn exa(arg: ((), (), (), ())) -> ((), (), (), ()) {
+    if invent() {
+        arg
+    } else {
+        tuple(invent(), invent(), invent(), invent())
+    }
+}
+
+fn hhh() -> () {
+    if invent() {
+        invent()
+    } else {
+        invent()
+    }
 }

@@ -46,17 +46,21 @@ fn main() {
         let ret_alloced = ctx.compute_depgraph(&name).unwrap().nodes[0].allocated();
         let deps = DepGraph::from_cfg(&mut ctx, &cfg, ret_alloced);
 
-        dot::render(
-            &deps,
-            &mut std::fs::File::create(&format!(
-                "renders/{}.{name}.dot",
-                path.file_name().unwrap().to_str().unwrap()
-            ))
-            .unwrap(),
-        )
-        .unwrap();
+        {
+            let deps = deps.clone();
+            // deps.simplify(&[]);
 
-    
+            fs::create_dir_all("renders/").unwrap();
+            dot::render(
+                &deps,
+                &mut std::fs::File::create(&format!(
+                    "renders/{}.{name}.dot",
+                    path.file_name().unwrap().to_str().unwrap()
+                ))
+                .unwrap(),
+            )
+            .unwrap();
+        }
 
         mem_manage::insert_management(&mut ctx, &mut cfg);
         println!("{name}: {:?}\n", cfg);

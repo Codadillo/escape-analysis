@@ -41,7 +41,17 @@ impl Context {
             return deps;
         }
 
-        for _ in 0..50 {
+        for i in 0..50 {
+            // dot::render(
+            //     &deps,
+            //     &mut std::fs::File::create(&format!(
+            //         "renders/{i}.{}.dot",
+            //         cfg.name,
+            //     ))
+            //     .unwrap(),
+            // )
+            // .unwrap();
+
             self.set_depgraph(&cfg.name, deps);
 
             let mut next = DepGraph::from_cfg(self, &cfg, false);
