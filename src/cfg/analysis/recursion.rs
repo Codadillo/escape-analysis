@@ -41,7 +41,7 @@ impl Context {
             return deps;
         }
 
-        for i in 0..50 {
+        for _ in 0..50 {
             // dot::render(
             //     &deps,
             //     &mut std::fs::File::create(&format!(

@@ -1,6 +1,6 @@
 pub mod deps;
-pub mod recursion;
 pub mod lva;
+pub mod recursion;
 
 use std::collections::HashMap;
 
